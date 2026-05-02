@@ -370,10 +370,12 @@ export default function App() {
     const newDeck = [...gameState.deck];
     const drawn = newDeck.pop();
     if (!drawn) {
+      const hasAnyOpened = gameState.players.some(p => p.hasOpened);
       setGameState({
         ...gameState,
         phase: GamePhase.FINISHED,
-        logs: [...gameState.logs, `Deste bitti. Oyun sona erdi.`]
+        noOneOpened: !hasAnyOpened,
+        logs: [...gameState.logs, hasAnyOpened ? `Deste bitti. Oyun sona erdi.` : `Deste bitti. Kimse açmadı — herkes 202 ceza alır!`]
       });
       return;
     }
@@ -1501,6 +1503,8 @@ export default function App() {
                       {gameState.players.find(p => p.id === gameState.winnerId)?.name}
                     </span> oyunu kazandı!
                   </>
+                ) : gameState.noOneOpened ? (
+                  "Kimse açamadı — herkes 202 ceza aldı."
                 ) : (
                   "Destede taş kalmadı."
                 )}

@@ -458,9 +458,11 @@ export const aiTakeTurn = (gameState: GameState): Partial<GameState> | null => {
       else currentPlayer.hand.push(drawn);
       logs.push(`${currentPlayer.name} desteden taş çekti.`);
     } else {
+      const hasAnyOpened = players.some(p => p.hasOpened);
       return {
         phase: GamePhase.FINISHED,
-        logs: [...logs, `Deste bitti. Oyun sona erdi.`]
+        noOneOpened: !hasAnyOpened,
+        logs: [...logs, hasAnyOpened ? `Deste bitti. Oyun sona erdi.` : `Deste bitti. Kimse açmadı — herkes 202 ceza alır!`]
       };
     }
   }
@@ -637,6 +639,15 @@ export const getFinishType = (
 export const calculateFinalScores = (gameState: GameState, finisherId: string | null, discardedTile: Tile | null): FinalScores => {
   const scores: FinalScores = {};
   const okeyTile = gameState.okeyTile;
+
+  // Kimse açmadan el bitti → herkes 202 ceza alır, kazanan yok
+  if (!finisherId && gameState.noOneOpened) {
+    gameState.players.forEach(player => {
+      scores[player.id] = 202 + (player.score > 0 ? player.score : 0);
+    });
+    return scores;
+  }
+
   const finishType = getFinishType(gameState, finisherId, discardedTile);
 
   // Kazananın aldığı puan
@@ -661,22 +672,16 @@ export const calculateFinalScores = (gameState: GameState, finisherId: string | 
 
   gameState.players.forEach(player => {
     if (player.id === finisherId) {
-      // Kazanan oyuncu: bitiş puanını alır (negatif = iyi)
       scores[player.id] = winnerScore;
     } else {
-      // Diğer oyuncular
       if (!player.hasOpened) {
-        // Açmayan oyuncu: 202 * çarpan
         scores[player.id] = 202 * penaltyMultiplier;
       } else {
-        // Açan oyuncu: eldeki taşların sayı toplamı * çarpan
         let handTotal = calculateHandTotal(player.hand, okeyTile);
-        // Elinde okey varsa +101 ceza
         const hasOkeyInHand = player.hand.some(t => t && isWildcard(t, okeyTile));
         if (hasOkeyInHand) handTotal += 101;
         scores[player.id] = handTotal * penaltyMultiplier;
       }
-      // Oyun içi ek cezaları (işler taş atma vb.) ekle
       if (player.score > 0) scores[player.id] += player.score;
     }
   });
