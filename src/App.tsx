@@ -749,11 +749,19 @@ export default function App() {
     });
   };
 
-  // Toplu geri alma: Tüm açılanları geri al
+  // Geri alma: Sadece BU SIRADA açılan taşları geri al.
+  // - İlk açma sırasında: tüm açılanlar bu sıraya ait → hepsi geri gelir.
+  // - Sonraki sıralarda: yalnızca o sırada eklenen yeni set/çiftler geri alınır.
   const undoAllOpens = () => {
     if (!gameState || gameState.phase !== GamePhase.PLAYING) return;
     const player = gameState.players[gameState.currentPlayerIndex];
     if (!player.hasOpened) return;
+
+    const turnIds = new Set(player.currentTurnOpenedTileIds);
+    if (turnIds.size === 0) {
+      showToast("Bu sırada geri alınacak bir açma yok.", "info");
+      return;
+    }
 
     const newPlayers = gameState.players.map(p => ({
       ...p,
@@ -763,40 +771,49 @@ export default function App() {
     }));
     const p = newPlayers[gameState.currentPlayerIndex];
 
-    // Tüm setleri geri al
+    const returnTile = (t: Tile) => {
+      const nullIdx = p.hand.indexOf(null);
+      if (nullIdx !== -1) p.hand[nullIdx] = t;
+      else p.hand.push(t);
+    };
+
+    // Sadece bu sıraya ait set'leri geri al (set'in en az bir taşı turnIds'de ise tümü geri gider)
+    const remainingSets: typeof p.openedSets = [];
     p.openedSets.forEach(set => {
-      set.tiles.forEach(t => {
-        const nullIdx = p.hand.indexOf(null);
-        if (nullIdx !== -1) {
-          p.hand[nullIdx] = t;
-        } else {
-          p.hand.push(t);
-        }
-      });
+      const isThisTurn = set.tiles.some(t => turnIds.has(t.id));
+      if (isThisTurn) {
+        set.tiles.forEach(returnTile);
+      } else {
+        remainingSets.push(set);
+      }
     });
-    p.openedSets = [];
+    p.openedSets = remainingSets;
 
-    // Tüm çiftleri geri al
+    // Sadece bu sıraya ait çiftleri geri al
+    const remainingPairs: typeof p.openedPairs = [];
     p.openedPairs.forEach(pair => {
-      pair.forEach(t => {
-        const nullIdx = p.hand.indexOf(null);
-        if (nullIdx !== -1) {
-          p.hand[nullIdx] = t;
-        } else {
-          p.hand.push(t);
-        }
-      });
+      const isThisTurn = pair.some(t => turnIds.has(t.id));
+      if (isThisTurn) {
+        pair.forEach(returnTile);
+      } else {
+        remainingPairs.push(pair);
+      }
     });
-    p.openedPairs = [];
+    p.openedPairs = remainingPairs;
 
-    p.hasOpened = false;
-    p.openedWithPairs = false;
+    // Eğer hiçbir açık per/çift kalmadıysa hasOpened sıfırla
+    if (p.openedSets.length === 0 && p.openedPairs.length === 0) {
+      p.hasOpened = false;
+      p.openedWithPairs = false;
+    }
+
+    p.currentTurnOpenedTileIds = [];
     p.canUndoOpen = true;
 
     setGameState({
       ...gameState,
       players: newPlayers,
-      logs: [...gameState.logs, `${p.name} tüm açtıklarını geri aldı.`]
+      logs: [...gameState.logs, `${p.name} bu sırada açtıklarını geri aldı.`]
     });
   };
 
