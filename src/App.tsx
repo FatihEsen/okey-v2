@@ -287,10 +287,10 @@ export default function App() {
     const okeyTile = determineOkey(indicator);
 
     const players: Player[] = [
-      { id: "p1", name: "Sen", hand: [], openedSets: [], openedPairs: [], score: 0, isAI: false, hasOpened: false, openedWithType: null, openedWithPairs: false, lastOpenScore: 0, canUndoOpen: false, hasUndoneThisRound: false },
-      { id: "p2", name: "AI 1", hand: [], openedSets: [], openedPairs: [], score: 0, isAI: true, hasOpened: false, openedWithType: null, openedWithPairs: false, lastOpenScore: 0, canUndoOpen: false, hasUndoneThisRound: false },
-      { id: "p3", name: "AI 2", hand: [], openedSets: [], openedPairs: [], score: 0, isAI: true, hasOpened: false, openedWithType: null, openedWithPairs: false, lastOpenScore: 0, canUndoOpen: false, hasUndoneThisRound: false },
-      { id: "p4", name: "AI 3", hand: [], openedSets: [], openedPairs: [], score: 0, isAI: true, hasOpened: false, openedWithType: null, openedWithPairs: false, lastOpenScore: 0, canUndoOpen: false, hasUndoneThisRound: false },
+      { id: "p1", name: "Sen", hand: [], openedSets: [], openedPairs: [], score: 0, isAI: false, hasOpened: false, openedWithType: null, openedWithPairs: false, lastOpenScore: 0, canUndoOpen: false, hasUndoneThisRound: false, currentTurnOpenedTileIds: [] },
+      { id: "p2", name: "AI 1", hand: [], openedSets: [], openedPairs: [], score: 0, isAI: true, hasOpened: false, openedWithType: null, openedWithPairs: false, lastOpenScore: 0, canUndoOpen: false, hasUndoneThisRound: false, currentTurnOpenedTileIds: [] },
+      { id: "p3", name: "AI 2", hand: [], openedSets: [], openedPairs: [], score: 0, isAI: true, hasOpened: false, openedWithType: null, openedWithPairs: false, lastOpenScore: 0, canUndoOpen: false, hasUndoneThisRound: false, currentTurnOpenedTileIds: [] },
+      { id: "p4", name: "AI 3", hand: [], openedSets: [], openedPairs: [], score: 0, isAI: true, hasOpened: false, openedWithType: null, openedWithPairs: false, lastOpenScore: 0, canUndoOpen: false, hasUndoneThisRound: false, currentTurnOpenedTileIds: [] },
     ];
 
     // Deal tiles
