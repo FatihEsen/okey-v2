@@ -491,7 +491,9 @@ export default function App() {
     }
 
     const newPlayers = gameState.players.map((p, i) => 
-      i === gameState.currentPlayerIndex ? { ...p, hand: [...p.hand], lastDiscardedTile: tile, mustOpen: false, score: p.score + penaltyScore } : p
+      i === gameState.currentPlayerIndex 
+        ? { ...p, hand: [...p.hand], lastDiscardedTile: tile, mustOpen: false, score: p.score + penaltyScore, currentTurnOpenedTileIds: [] } 
+        : p
     );
     newPlayers[gameState.currentPlayerIndex].hand[tileIdx] = null;
     // --- END: Penalty Checks ---
