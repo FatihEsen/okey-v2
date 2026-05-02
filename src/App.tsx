@@ -344,7 +344,10 @@ export default function App() {
     const [indicator] = deck.splice(indicatorIndex, 1);
     const okeyTile = determineOkey(indicator);
 
-    const players: Player[] = gameState.players.map((p, idx) => ({
+    // Her el bir sağdaki oyuncu (index +1) başlar
+    const nextFirstPlayer = gameState.roundNumber % 4;
+
+    const players: Player[] = gameState.players.map((p) => ({
       ...p,
       hand: [],
       openedSets: [],
@@ -362,15 +365,23 @@ export default function App() {
       drawnFromDiscardTile: null,
       lastDiscardedTile: null,
     }));
-    players[0].hand = sortBySets([...deck.splice(0, 22)], okeyTile);
-    players[1].hand = [...deck.splice(0, 21), ...Array(9).fill(null)];
-    players[2].hand = [...deck.splice(0, 21), ...Array(9).fill(null)];
-    players[3].hand = [...deck.splice(0, 21), ...Array(9).fill(null)];
+
+    // İlk oynayan 22, diğerleri 21 taş alır
+    for (let i = 0; i < 4; i++) {
+      const pIdx = (nextFirstPlayer + i) % 4;
+      if (i === 0) {
+        players[pIdx].hand = pIdx === 0
+          ? sortBySets([...deck.splice(0, 22)], okeyTile)
+          : [...deck.splice(0, 22), ...Array(8).fill(null)];
+      } else {
+        players[pIdx].hand = [...deck.splice(0, 21), ...Array(9).fill(null)];
+      }
+    }
 
     setGameState({
       mode: gameState.mode,
       players,
-      currentPlayerIndex: 0,
+      currentPlayerIndex: nextFirstPlayer,
       deck,
       discardPile: [],
       indicator,
@@ -543,9 +554,14 @@ export default function App() {
     let extraLogs: string[] = [];
     let penaltyScore = 0;
     
+    // Son taşı atıp bitirmek üzereyse işler cezası uygulanmaz
+    const handAfterDiscard = [...player.hand];
+    handAfterDiscard[tileIdx] = null;
+    const willWin = handAfterDiscard.every(t => t === null);
+
     // Check if discarded tile is "İşler" (playable anywhere)
     const isPlayable = isPlayableAnywhere(tile, gameState.players, gameState.okeyTile);
-    if (isPlayable) {
+    if (isPlayable && !willWin) {
       penaltyScore += 101;
       extraLogs.push(`${player.name} işler taş attığı için 101 ceza aldı!`);
     }
