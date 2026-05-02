@@ -725,11 +725,26 @@ export default function App() {
 
       const remainingScore = calculateHandTotal(p.hand, gameState.okeyTile);
 
+      // Yerden alınan taşla el açıldıysa, o taşı atan oyuncuya 101 ceza
+      const openLogs: string[] = [`${p.name} elini açtı. Kalan puan: ${remainingScore}`];
+      if (player.drawnFromDiscardTile) {
+        const discarderIdx = gameState.players.findIndex(
+          op => op.lastDiscardedTile?.id === player.drawnFromDiscardTile!.id
+        );
+        if (discarderIdx !== -1 && discarderIdx !== gameState.currentPlayerIndex) {
+          newPlayers[discarderIdx] = {
+            ...newPlayers[discarderIdx],
+            score: newPlayers[discarderIdx].score + 101
+          };
+          openLogs.push(`${newPlayers[discarderIdx].name} attığı taş alınıp açıldığı için 101 ceza aldı!`);
+        }
+      }
+
       setGameState({
         ...gameState,
         players: newPlayers,
         currentOpenScore: Math.max(gameState.currentOpenScore, totalScore),
-        logs: [...gameState.logs, `${p.name} elini açtı. Kalan puan: ${remainingScore}`]
+        logs: [...gameState.logs, ...openLogs]
       });
       setSelectedTiles([]);
     } else {
@@ -1323,6 +1338,11 @@ export default function App() {
                 <Hash size={16} className="text-purple-500" />
                 <span className="text-sm font-bold">{gameState.currentOpenPairs || 5}</span>
                 <span className="text-[10px] text-slate-400 font-bold uppercase">Çift</span>
+              </div>
+              <div className="w-px h-4 bg-slate-200" />
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-bold text-amber-500">{gameState.roundNumber}</span>
+                <span className="text-[10px] text-slate-400 font-bold uppercase">/ {totalRounds} El</span>
               </div>
             </div>
 

@@ -566,6 +566,23 @@ export const aiTakeTurn = (gameState: GameState): Partial<GameState> | null => {
           currentPlayer.hand.forEach((tile, hIdx) => {
             if (tile && canProcessTile(tile, set, gameState.okeyTile)) {
               set.tiles.push(tile);
+              // Ekleme sonrası sıralama
+              if (set.type === "run") {
+                const nIdx = set.tiles.findIndex(t => !isWildcard(t, gameState.okeyTile));
+                if (nIdx !== -1) {
+                  const anchor = getEffectiveTile(set.tiles[nIdx], gameState.okeyTile).number;
+                  const withRep = set.tiles.map((t, i) => ({ tile: t, rep: anchor + (i - nIdx) }));
+                  withRep.sort((a, b) => a.rep - b.rep);
+                  set.tiles = withRep.map(x => x.tile);
+                }
+              } else if (set.type === "group") {
+                const colorOrder = [Color.RED, Color.YELLOW, Color.BLACK, Color.BLUE, Color.JOKER];
+                set.tiles.sort((a, b) => {
+                  if (isWildcard(a, gameState.okeyTile)) return 1;
+                  if (isWildcard(b, gameState.okeyTile)) return -1;
+                  return colorOrder.indexOf(a.color) - colorOrder.indexOf(b.color);
+                });
+              }
               currentPlayer.hand[hIdx] = null;
               logs.push(`${currentPlayer.name}, ${targetPlayer.name}'in perine taş işledi.`);
             }
