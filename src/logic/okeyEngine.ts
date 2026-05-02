@@ -328,25 +328,10 @@ export const sortBySets = (hand: (Tile | null)[], okeyTile: { number: number; co
   const sets = findBestSets(tiles, okeyTile);
   const usedIds = new Set(sets.flatMap(s => s.tiles).map(t => t.id));
   const remainingTiles = tiles.filter(t => !usedIds.has(t.id));
-  
-  const result: (Tile | null)[] = new Array(30).fill(null);
-  let pos = 0;
-  
-  sets.forEach((set) => {
-    if (pos + set.tiles.length >= 30) return;
-    if (set.tiles.length >= 6) {
-      // 6+ taşlı seriyi 3'erli gruplara böl
-      for (let i = 0; i < set.tiles.length; i += 3) {
-        const chunk = set.tiles.slice(i, i + 3);
-        chunk.forEach(t => { result[pos++] = t; });
-        pos++;
-      }
-    } else {
-      set.tiles.forEach(t => { result[pos++] = t; });
-      pos++;
-    }
-  });
 
+  const result: (Tile | null)[] = new Array(30).fill(null);
+
+  // 1. Irkartaları sırala ve EN SAĞDAN yerleştir — setlerle asla karışmasın
   const leftovers = [...remainingTiles].sort((a, b) => {
     const effA = getEffectiveTile(a, okeyTile);
     const effB = getEffectiveTile(b, okeyTile);
@@ -354,12 +339,28 @@ export const sortBySets = (hand: (Tile | null)[], okeyTile: { number: number; co
     return effA.number - effB.number;
   });
 
-  let leftoverPos = Math.max(pos, 30 - leftovers.length);
+  let rightPos = 29;
+  for (let i = leftovers.length - 1; i >= 0; i--) {
+    result[rightPos--] = leftovers[i];
+  }
+  // rightPos artık setlerin kullanabileceği son slot (dahil)
+  const setsBoundary = rightPos;
 
-  leftovers.forEach(t => {
-    if (leftoverPos < 30) result[leftoverPos++] = t;
-  });
-  
+  // 2. Setleri soldan yerleştir, 6+ taşlıysa 3'erli parçalara böl
+  let pos = 0;
+  for (const set of sets) {
+    const chunks: Tile[][] = set.tiles.length >= 6
+      ? Array.from({ length: Math.ceil(set.tiles.length / 3) }, (_, i) =>
+          set.tiles.slice(i * 3, (i + 1) * 3))
+      : [set.tiles];
+
+    for (const chunk of chunks) {
+      if (pos + chunk.length - 1 > setsBoundary) break; // sınırı aşma
+      chunk.forEach(t => { result[pos++] = t; });
+      if (pos <= setsBoundary) pos++; // gruplar arası boşluk
+    }
+  }
+
   return result;
 };
 
