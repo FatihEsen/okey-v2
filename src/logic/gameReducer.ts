@@ -175,9 +175,17 @@ export const gameReducer = (state: GameState, action: GameAction): GameState => 
 
       const nextPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
 
+      // İşler/okey atma cezası
+      const { penalty, reason } = calculateDiscardPenalty(discardedTile, state, currentPlayer);
+
       const updatedPlayers = state.players.map((p, idx) =>
-        idx === state.currentPlayerIndex ? { ...p, hand: newHand } : p
+        idx === state.currentPlayerIndex
+          ? { ...p, hand: newHand, score: p.score + penalty }
+          : p
       );
+
+      const newLogs = [...state.logs, `${currentPlayer.name} discarded ${discardedTile.color} ${discardedTile.number}.`];
+      if (reason) newLogs.push(reason);
 
       return {
         ...state,
@@ -185,7 +193,7 @@ export const gameReducer = (state: GameState, action: GameAction): GameState => 
         discardPile: [...state.discardPile, discardedTile],
         currentPlayerIndex: nextPlayerIndex,
         phase: GamePhase.DRAWING,
-        logs: [...state.logs, `${currentPlayer.name} discarded ${discardedTile.color} ${discardedTile.number}.`]
+        logs: newLogs,
       };
     }
 
