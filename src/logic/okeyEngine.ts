@@ -663,7 +663,7 @@ export const aiTakeTurn = (gameState: GameState): Partial<GameState> | null => {
   discardPile.push(discarded);
   logs.push(`${currentPlayer.name} ${discarded.number} ${discarded.color} attı.`);
 
-  const penalty = calculateDiscardPenalty(discarded, gameState, currentPlayer);
+  const penalty = calculateDiscardPenalty(discarded, { ...gameState, players }, currentPlayer);
   if (penalty.penalty > 0) {
     currentPlayer.score += penalty.penalty;
     if (penalty.reason) logs.push(penalty.reason);
