@@ -334,8 +334,17 @@ export const sortBySets = (hand: (Tile | null)[], okeyTile: { number: number; co
   
   sets.forEach((set) => {
     if (pos + set.tiles.length >= 30) return;
-    set.tiles.forEach(t => { result[pos++] = t; });
-    pos++; 
+    if (set.tiles.length >= 6) {
+      // 6+ taşlı seriyi 3'erli gruplara böl
+      for (let i = 0; i < set.tiles.length; i += 3) {
+        const chunk = set.tiles.slice(i, i + 3);
+        chunk.forEach(t => { result[pos++] = t; });
+        pos++;
+      }
+    } else {
+      set.tiles.forEach(t => { result[pos++] = t; });
+      pos++;
+    }
   });
 
   const leftovers = [...remainingTiles].sort((a, b) => {
