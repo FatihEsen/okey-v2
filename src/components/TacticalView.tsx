@@ -276,8 +276,8 @@ export function TacticalView(props: TacticalViewProps) {
           </div>
 
           {/* ── PLAYER HAND ─────────────────────────────────────────── */}
-          <div className="border-t-2 border-black px-4 pt-3 pb-2">
-            <div className="flex justify-between items-center mb-2 uppercase text-[11px]">
+          <div className="border-t-2 border-black px-4 pt-2 pb-2">
+            <div className="flex justify-between items-center mb-1.5 uppercase text-[11px]">
               <div className={`font-bold ${isMyTurn ? "underline" : ""}`}>
                 P1: YOU{isMyTurn ? " (ACTIVE)" : ""}
                 {me.hasOpened && <span className="ml-2 text-[9px] text-gray-500">[OPEN]</span>}
@@ -286,35 +286,49 @@ export function TacticalView(props: TacticalViewProps) {
               <div>HAND VALUE: {handValue} | BARAJ: {gameState.currentOpenScore || 101}</div>
             </div>
 
-            {/* Tiles */}
-            <div className="flex flex-wrap gap-1 p-1.5 border border-black bg-gray-50 min-h-[52px]">
-              {handTiles.map(tile => (
-                <TTile
-                  key={tile.id}
-                  tile={tile}
-                  size="sm"
-                  selected={selectedTiles.includes(tile.id)}
-                  okeyTile={gameState.okeyTile}
-                  onClick={() => onTileClick(tile)}
-                  disabled={!isMyTurn || gameState.phase === GamePhase.DRAWING}
-                />
-              ))}
-              {handTiles.length === 0 && (
-                <div className="text-[10px] text-gray-400 flex items-center px-2">NO TILES</div>
-              )}
+            {/* 2-row rack — 15 slots per row, mirrors classic Rack */}
+            <div
+              className="p-1 border border-black bg-gray-50"
+              style={{ display: "grid", gridTemplateColumns: "repeat(15, minmax(0,1fr))", gap: "2px" }}
+            >
+              {Array.from({ length: 30 }, (_, slotIdx) => {
+                const tile = me.hand[slotIdx] ?? null;
+                if (!tile) {
+                  return (
+                    <div
+                      key={slotIdx}
+                      className="border border-dashed border-gray-300 rounded-sm"
+                      style={{ height: "44px" }}
+                    />
+                  );
+                }
+                return (
+                  <TTile
+                    key={tile.id}
+                    tile={tile}
+                    size="sm"
+                    selected={selectedTiles.includes(tile.id)}
+                    okeyTile={gameState.okeyTile}
+                    onClick={() => onTileClick(tile)}
+                    disabled={!isMyTurn || gameState.phase === GamePhase.DRAWING}
+                  />
+                );
+              })}
             </div>
           </div>
 
           {/* ── ACTION BUTTONS ──────────────────────────────────────── */}
-          <div className="border-t border-black px-4 py-2 flex gap-2">
+          <div className="border-t border-black px-4 py-2 flex flex-wrap gap-1.5">
             <Btn
-              label="DRAW"
+              label="DRAW DECK"
               onClick={onDrawFromDeck}
               disabled={!canDraw}
             />
-            {me.mustOpen && !me.hasOpened && (
-              <Btn label="GERİ BIRAK" onClick={onReturnDrawnTile} disabled={!isMyTurn} outline />
-            )}
+            <Btn
+              label="DRAW DISCARD"
+              onClick={onDrawFromDiscard}
+              disabled={!canDraw || !topDiscard}
+            />
             <Btn
               label="DISCARD"
               onClick={onDiscardSelected}
@@ -338,6 +352,9 @@ export function TacticalView(props: TacticalViewProps) {
               disabled={!isMyTurn || !me.canUndoOpen}
               dashed
             />
+            {!!me.drawnFromDiscardTile && (
+              <Btn label="GERİ BIRAK" onClick={onReturnDrawnTile} disabled={!isMyTurn} dashed />
+            )}
           </div>
 
           {/* Phase indicator */}
