@@ -615,6 +615,9 @@ export default function App() {
       p.hasOpened = true;
       p.openedSets = [...p.openedSets, ...setsToOpen];
       p.lastOpenScore = totalScore;
+      // Bu sırada açılan taşları kaydet (geri al sadece bunları geri alır)
+      const openedTileIds = setsToOpen.flatMap(s => s.tiles.map(t => t.id));
+      p.currentTurnOpenedTileIds = [...p.currentTurnOpenedTileIds, ...openedTileIds];
       
       // Remove from hand by setting to null
       const tilesToRemove = setsToOpen.flatMap(s => s.tiles);
