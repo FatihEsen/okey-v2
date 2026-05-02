@@ -379,8 +379,6 @@ export const canSwapOkey = (tile: Tile, set: Combination, okeyTile: { number: nu
   if (!set.tiles.some(t => isWildcard(t, okeyTile))) return false;
 
   if (set.type === "group") {
-    // Grup: koyulan taşın sayısı, grubu oluşturan sayıyla aynı olmalı
-    // ve rengi henüz grupta yoksa swap yapılabilir.
     const normalTiles = set.tiles.filter(t => !isWildcard(t, okeyTile));
     if (normalTiles.length === 0) return false;
     const groupNumber = getEffectiveTile(normalTiles[0], okeyTile).number;
@@ -388,7 +386,11 @@ export const canSwapOkey = (tile: Tile, set: Combination, okeyTile: { number: nu
     if (eff.number !== groupNumber) return false;
     const existingColors = normalTiles.map(t => getEffectiveTile(t, okeyTile).color);
     if (existingColors.includes(eff.color)) return false;
-    return true;
+    // Swap ancak tüm 4 renk tamamlandığında geçerli:
+    // yani grupta zaten 3 gerçek taş olmalı ve verilen taş 4. rengi tamamlamalı.
+    const allColors = [Color.RED, Color.YELLOW, Color.BLACK, Color.BLUE];
+    const colorsAfterSwap = [...existingColors, eff.color];
+    return allColors.every(c => colorsAfterSwap.includes(c));
   }
 
   // Run: okeyin tam olarak temsil ettiği sayı+renk ile eşleşmeli.
