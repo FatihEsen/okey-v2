@@ -4,13 +4,12 @@
  */
 
 import { GameState, Player, Tile, Combination, GameAction, Color } from "../types";
-import { isWildcard, getEffectiveTile, calculateSetScore, isValidGroup, isValidRun, findBestSets, findPairs } from "./okeyEngine";
+import { isWildcard, getEffectiveTile, calculateSetScore, isValidGroup, isValidRun, findBestSets, findPairs, isPlayableAnywhere, isRealOkey } from "./okeyEngine";
 import { canOpenWithSets, canOpenWithPairs } from "./okeyOpening";
 
 // Basic AI logic for making a move
 export const aiTakeTurn = (gameState: GameState, aiPlayer: Player): GameAction | null => {
   // 1. Try to open if possible
-  // Simplified: check for 101 points or 5 pairs
   if (!aiPlayer.hasOpened) {
     const possibleSets = findBestSets(aiPlayer.hand, gameState.okeyTile);
     const { valid: canOpenSets, totalScore } = canOpenWithSets(possibleSets, gameState);
@@ -26,22 +25,26 @@ export const aiTakeTurn = (gameState: GameState, aiPlayer: Player): GameAction |
     }
   }
 
-  // 2. Discard a tile
-  // Simple strategy: discard the highest value tile that is not part of any potential set/run
+  // 2. Discard a tile — güvenli seçim:
+  //    - Asla OKEY (gerçek okey) atma
+  //    - Mümkünse "işler" taş atma (rakibe yarar, ceza yazar)
+  //    - Aday yoksa en yüksek değerli ölü taşı at
   const hand = aiPlayer.hand.filter((t): t is Tile => t !== null);
-  if (hand.length === 0) return null; // Should not happen if AI is discarding
+  if (hand.length === 0) return null;
 
-  // Sort tiles by number in descending order
-  const sortedHand = [...hand].sort((a, b) => getEffectiveTile(b, gameState.okeyTile).number - getEffectiveTile(a, gameState.okeyTile).number);
+  const sortedHand = [...hand].sort(
+    (a, b) => getEffectiveTile(b, gameState.okeyTile).number - getEffectiveTile(a, gameState.okeyTile).number
+  );
 
-  // Find a tile to discard. Prioritize tiles that are not part of any current combinations.
-  for (const tile of sortedHand) {
-    // For simplicity, just discard the highest tile for now.
-    // More advanced AI would check if discarding this tile breaks a potential set/run.
-    return { type: 'DISCARD_TILE', tileId: tile.id };
-  }
+  const safe = sortedHand.find(
+    t => !isRealOkey(t, gameState.okeyTile) && !isPlayableAnywhere(t, gameState.players, gameState.okeyTile)
+  );
+  if (safe) return { type: 'DISCARD_TILE', tileId: safe.id };
 
-  return null; // Should not reach here
+  const nonOkey = sortedHand.find(t => !isRealOkey(t, gameState.okeyTile));
+  if (nonOkey) return { type: 'DISCARD_TILE', tileId: nonOkey.id };
+
+  return { type: 'DISCARD_TILE', tileId: sortedHand[0].id };
 };
 
 // Logic for AI to decide whether to draw from deck or discard pile
