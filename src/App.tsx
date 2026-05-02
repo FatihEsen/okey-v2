@@ -287,10 +287,10 @@ export default function App() {
     const okeyTile = determineOkey(indicator);
 
     const players: Player[] = [
-      { id: "p1", name: "Sen", hand: [], openedSets: [], openedPairs: [], score: 0, isAI: false, hasOpened: false, openedWithType: null, openedWithPairs: false, lastOpenScore: 0, canUndoOpen: false, hasUndoneThisRound: false },
-      { id: "p2", name: "AI 1", hand: [], openedSets: [], openedPairs: [], score: 0, isAI: true, hasOpened: false, openedWithType: null, openedWithPairs: false, lastOpenScore: 0, canUndoOpen: false, hasUndoneThisRound: false },
-      { id: "p3", name: "AI 2", hand: [], openedSets: [], openedPairs: [], score: 0, isAI: true, hasOpened: false, openedWithType: null, openedWithPairs: false, lastOpenScore: 0, canUndoOpen: false, hasUndoneThisRound: false },
-      { id: "p4", name: "AI 3", hand: [], openedSets: [], openedPairs: [], score: 0, isAI: true, hasOpened: false, openedWithType: null, openedWithPairs: false, lastOpenScore: 0, canUndoOpen: false, hasUndoneThisRound: false },
+      { id: "p1", name: "Sen", hand: [], openedSets: [], openedPairs: [], score: 0, isAI: false, hasOpened: false, openedWithType: null, openedWithPairs: false, lastOpenScore: 0, canUndoOpen: false, hasUndoneThisRound: false, currentTurnOpenedTileIds: [] },
+      { id: "p2", name: "AI 1", hand: [], openedSets: [], openedPairs: [], score: 0, isAI: true, hasOpened: false, openedWithType: null, openedWithPairs: false, lastOpenScore: 0, canUndoOpen: false, hasUndoneThisRound: false, currentTurnOpenedTileIds: [] },
+      { id: "p3", name: "AI 2", hand: [], openedSets: [], openedPairs: [], score: 0, isAI: true, hasOpened: false, openedWithType: null, openedWithPairs: false, lastOpenScore: 0, canUndoOpen: false, hasUndoneThisRound: false, currentTurnOpenedTileIds: [] },
+      { id: "p4", name: "AI 3", hand: [], openedSets: [], openedPairs: [], score: 0, isAI: true, hasOpened: false, openedWithType: null, openedWithPairs: false, lastOpenScore: 0, canUndoOpen: false, hasUndoneThisRound: false, currentTurnOpenedTileIds: [] },
     ];
 
     // Deal tiles
@@ -491,7 +491,9 @@ export default function App() {
     }
 
     const newPlayers = gameState.players.map((p, i) => 
-      i === gameState.currentPlayerIndex ? { ...p, hand: [...p.hand], lastDiscardedTile: tile, mustOpen: false, score: p.score + penaltyScore } : p
+      i === gameState.currentPlayerIndex 
+        ? { ...p, hand: [...p.hand], lastDiscardedTile: tile, mustOpen: false, score: p.score + penaltyScore, currentTurnOpenedTileIds: [] } 
+        : p
     );
     newPlayers[gameState.currentPlayerIndex].hand[tileIdx] = null;
     // --- END: Penalty Checks ---
@@ -615,6 +617,9 @@ export default function App() {
       p.hasOpened = true;
       p.openedSets = [...p.openedSets, ...setsToOpen];
       p.lastOpenScore = totalScore;
+      // Bu sırada açılan taşları kaydet (geri al sadece bunları geri alır)
+      const openedTileIds = setsToOpen.flatMap(s => s.tiles.map(t => t.id));
+      p.currentTurnOpenedTileIds = [...p.currentTurnOpenedTileIds, ...openedTileIds];
       
       // Remove from hand by setting to null
       const tilesToRemove = setsToOpen.flatMap(s => s.tiles);
@@ -744,11 +749,19 @@ export default function App() {
     });
   };
 
-  // Toplu geri alma: Tüm açılanları geri al
+  // Geri alma: Sadece BU SIRADA açılan taşları geri al.
+  // - İlk açma sırasında: tüm açılanlar bu sıraya ait → hepsi geri gelir.
+  // - Sonraki sıralarda: yalnızca o sırada eklenen yeni set/çiftler geri alınır.
   const undoAllOpens = () => {
     if (!gameState || gameState.phase !== GamePhase.PLAYING) return;
     const player = gameState.players[gameState.currentPlayerIndex];
     if (!player.hasOpened) return;
+
+    const turnIds = new Set(player.currentTurnOpenedTileIds);
+    if (turnIds.size === 0) {
+      showToast("Bu sırada geri alınacak bir açma yok.", "info");
+      return;
+    }
 
     const newPlayers = gameState.players.map(p => ({
       ...p,
@@ -758,40 +771,49 @@ export default function App() {
     }));
     const p = newPlayers[gameState.currentPlayerIndex];
 
-    // Tüm setleri geri al
+    const returnTile = (t: Tile) => {
+      const nullIdx = p.hand.indexOf(null);
+      if (nullIdx !== -1) p.hand[nullIdx] = t;
+      else p.hand.push(t);
+    };
+
+    // Sadece bu sıraya ait set'leri geri al (set'in en az bir taşı turnIds'de ise tümü geri gider)
+    const remainingSets: typeof p.openedSets = [];
     p.openedSets.forEach(set => {
-      set.tiles.forEach(t => {
-        const nullIdx = p.hand.indexOf(null);
-        if (nullIdx !== -1) {
-          p.hand[nullIdx] = t;
-        } else {
-          p.hand.push(t);
-        }
-      });
+      const isThisTurn = set.tiles.some(t => turnIds.has(t.id));
+      if (isThisTurn) {
+        set.tiles.forEach(returnTile);
+      } else {
+        remainingSets.push(set);
+      }
     });
-    p.openedSets = [];
+    p.openedSets = remainingSets;
 
-    // Tüm çiftleri geri al
+    // Sadece bu sıraya ait çiftleri geri al
+    const remainingPairs: typeof p.openedPairs = [];
     p.openedPairs.forEach(pair => {
-      pair.forEach(t => {
-        const nullIdx = p.hand.indexOf(null);
-        if (nullIdx !== -1) {
-          p.hand[nullIdx] = t;
-        } else {
-          p.hand.push(t);
-        }
-      });
+      const isThisTurn = pair.some(t => turnIds.has(t.id));
+      if (isThisTurn) {
+        pair.forEach(returnTile);
+      } else {
+        remainingPairs.push(pair);
+      }
     });
-    p.openedPairs = [];
+    p.openedPairs = remainingPairs;
 
-    p.hasOpened = false;
-    p.openedWithPairs = false;
+    // Eğer hiçbir açık per/çift kalmadıysa hasOpened sıfırla
+    if (p.openedSets.length === 0 && p.openedPairs.length === 0) {
+      p.hasOpened = false;
+      p.openedWithPairs = false;
+    }
+
+    p.currentTurnOpenedTileIds = [];
     p.canUndoOpen = true;
 
     setGameState({
       ...gameState,
       players: newPlayers,
-      logs: [...gameState.logs, `${p.name} tüm açtıklarını geri aldı.`]
+      logs: [...gameState.logs, `${p.name} bu sırada açtıklarını geri aldı.`]
     });
   };
 
@@ -822,6 +844,9 @@ export default function App() {
       p.hasOpened = true;
       p.openedPairs = [...p.openedPairs, ...pairs];
       p.lastOpenScore = pairs.length;
+      // Bu sırada açılan taşları kaydet
+      const openedPairTileIds = pairs.flatMap(pair => pair.map(t => t.id));
+      p.currentTurnOpenedTileIds = [...p.currentTurnOpenedTileIds, ...openedPairTileIds];
 
       // Remove from hand
       pairs.forEach(pair => {

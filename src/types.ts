@@ -46,6 +46,8 @@ export interface Player {
   drawnFromDiscardTile?: Tile | null;
   canUndoOpen: boolean; 
   hasUndoneThisRound: boolean; 
+  // Bu sırada (turda) açılan taşların id'leri — geri al sadece bunları geri alır.
+  currentTurnOpenedTileIds: string[];
 }
 
 export enum GameMode {

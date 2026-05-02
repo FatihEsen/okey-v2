@@ -164,7 +164,13 @@ export const findBestSets = (hand: (Tile | null)[], okeyTile: { number: number; 
         const neededWildcards = len - usedNormal.length;
         if (wildcards.length >= neededWildcards) {
           const setTiles = [...usedNormal, ...wildcards.slice(0, neededWildcards)];
-          const score = calculateSetScore({ tiles: setTiles, type: "group", score: 0 }, okeyTile);
+          let score = calculateSetScore({ tiles: setTiles, type: "group", score: 0 }, okeyTile);
+          // Akıllı okey kullanımı: wildcard, zaten 3+ normal taşla tamamlanmış
+          // bir grubu büyütmek için "boşa" harcanıyorsa adayın değerini düşür.
+          // Böylece backtrack, okey'i başka bir per oluşturmak için saklamayı tercih eder.
+          if (neededWildcards > 0 && usedNormal.length >= 3) {
+            score -= 50 * neededWildcards;
+          }
           allCandidates.push({ tiles: setTiles, type: "group", score });
         }
       }
@@ -190,7 +196,13 @@ export const findBestSets = (hand: (Tile | null)[], okeyTile: { number: number; 
         }
 
         if (possible) {
-          const score = calculateSetScore({ tiles: currentRun, type: "run", score: 0 }, okeyTile);
+          let score = calculateSetScore({ tiles: currentRun, type: "run", score: 0 }, okeyTile);
+          // Akıllı okey kullanımı: zaten 3+ normal taşla geçerli bir seri varken
+          // wildcard ile uzatmak adayı küçük bir cezayla geri çek.
+          const normalInRun = currentRun.length - usedWildcardsCount;
+          if (usedWildcardsCount > 0 && normalInRun >= 3) {
+            score -= 50 * usedWildcardsCount;
+          }
           allCandidates.push({ tiles: currentRun, type: "run", score });
         }
       }
