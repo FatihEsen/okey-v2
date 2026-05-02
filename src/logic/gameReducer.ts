@@ -34,7 +34,7 @@ const initializePlayers = (numPlayers: number, isPartnerMode: boolean): Player[]
 
 const dealTiles = (deck: Tile[], players: Player[], okeyTile: { number: number; color: Color } | null): { updatedDeck: Tile[]; updatedPlayers: Player[] } => {
   let currentDeck = [...deck];
-  const updatedPlayers = players.map(p => ({ ...p, hand: [] }));
+  const updatedPlayers = players.map(p => ({ ...p, hand: [] as (Tile | null)[] }));
 
   // Deal 14 tiles to each player, 15 to the first player
   for (let i = 0; i < FIRST_PLAYER_HAND_SIZE; i++) {

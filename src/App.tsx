@@ -310,6 +310,8 @@ export default function App() {
       phase: GamePhase.PLAYING,
       currentOpenScore: 0,
       currentOpenPairs: 0,
+      lastOpeningScore: 0,
+      lastOpeningPairs: 0,
       winnerId: null,
       logs: ["Oyun başladı!"],
       hasDoubleOpen: false,
@@ -444,7 +446,7 @@ export default function App() {
     const player = gameState.players[gameState.currentPlayerIndex];
     
     // Determine which tile to discard
-    let tile: Tile | undefined;
+    let tile: Tile | null | undefined;
     let tileIdx: number;
     
     if (tileToDiscard) {
