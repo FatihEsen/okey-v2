@@ -287,10 +287,10 @@ export default function App() {
     const okeyTile = determineOkey(indicator);
 
     const players: Player[] = [
-      { id: "p1", name: "Sen", hand: [], openedSets: [], openedPairs: [], score: 0, isAI: false, hasOpened: false, openedWithType: null, openedWithPairs: false, lastOpenScore: 0, canUndoOpen: false, hasUndoneThisRound: false, currentTurnOpenedTileIds: [] },
-      { id: "p2", name: "AI 1", hand: [], openedSets: [], openedPairs: [], score: 0, isAI: true, hasOpened: false, openedWithType: null, openedWithPairs: false, lastOpenScore: 0, canUndoOpen: false, hasUndoneThisRound: false, currentTurnOpenedTileIds: [] },
-      { id: "p3", name: "AI 2", hand: [], openedSets: [], openedPairs: [], score: 0, isAI: true, hasOpened: false, openedWithType: null, openedWithPairs: false, lastOpenScore: 0, canUndoOpen: false, hasUndoneThisRound: false, currentTurnOpenedTileIds: [] },
-      { id: "p4", name: "AI 3", hand: [], openedSets: [], openedPairs: [], score: 0, isAI: true, hasOpened: false, openedWithType: null, openedWithPairs: false, lastOpenScore: 0, canUndoOpen: false, hasUndoneThisRound: false, currentTurnOpenedTileIds: [] },
+      { id: "p1", name: "Sen", hand: [], openedSets: [], openedPairs: [], score: 0, isAI: false, hasOpened: false, openedWithType: null, openedWithPairs: false, lastOpenScore: 0, canUndoOpen: false, hasUndoneThisRound: false, currentTurnOpenedTileIds: [], openedThisTurn: false },
+      { id: "p2", name: "AI 1", hand: [], openedSets: [], openedPairs: [], score: 0, isAI: true, hasOpened: false, openedWithType: null, openedWithPairs: false, lastOpenScore: 0, canUndoOpen: false, hasUndoneThisRound: false, currentTurnOpenedTileIds: [], openedThisTurn: false },
+      { id: "p3", name: "AI 2", hand: [], openedSets: [], openedPairs: [], score: 0, isAI: true, hasOpened: false, openedWithType: null, openedWithPairs: false, lastOpenScore: 0, canUndoOpen: false, hasUndoneThisRound: false, currentTurnOpenedTileIds: [], openedThisTurn: false },
+      { id: "p4", name: "AI 3", hand: [], openedSets: [], openedPairs: [], score: 0, isAI: true, hasOpened: false, openedWithType: null, openedWithPairs: false, lastOpenScore: 0, canUndoOpen: false, hasUndoneThisRound: false, currentTurnOpenedTileIds: [], openedThisTurn: false },
     ];
 
     // Deal tiles
@@ -492,7 +492,7 @@ export default function App() {
 
     const newPlayers = gameState.players.map((p, i) => 
       i === gameState.currentPlayerIndex 
-        ? { ...p, hand: [...p.hand], lastDiscardedTile: tile, mustOpen: false, score: p.score + penaltyScore, currentTurnOpenedTileIds: [] } 
+        ? { ...p, hand: [...p.hand], lastDiscardedTile: tile, mustOpen: false, score: p.score + penaltyScore, currentTurnOpenedTileIds: [], openedThisTurn: false } 
         : p
     );
     newPlayers[gameState.currentPlayerIndex].hand[tileIdx] = null;
@@ -500,7 +500,8 @@ export default function App() {
 
     const isWin = newPlayers[gameState.currentPlayerIndex].hand.every(t => t === null);
     const isOkeyFinish = isWin && isOkeyLike(tile, gameState.okeyTile);
-    const isHandFinish = isWin && player.openedSets.length === 0 && player.openedPairs.length === 0;
+    // Elden bitirme: oyuncu aynı turda hem ilk kez el açtıysa hem bitirdiyse
+    const isHandFinish = isWin && player.openedThisTurn === true;
     let winMsg = `${player.name} ${tile.number} ${tile.color} attı.`;
     if (isWin) {
       if (isHandFinish && isOkeyFinish) winMsg += " ELDEN + OKEY ile bitirdi! (-404, ×4 ceza)";
@@ -613,11 +614,14 @@ export default function App() {
     const totalScore = setsToOpen.reduce((s, set) => s + set.score, 0);
 
     if (totalScore >= minScore && setsToOpen.length > 0) {
+      const wasFirstOpen = !player.hasOpened;
       const newPlayers = gameState.players.map((p, i) => 
         i === gameState.currentPlayerIndex ? { ...p, hand: [...p.hand], openedSets: [...p.openedSets], mustOpen: false, drawnFromDiscardTile: undefined } : p
       );
       const p = newPlayers[gameState.currentPlayerIndex];
       p.hasOpened = true;
+      // Elden bitirme tespiti: bu turda ilk kez açıldıysa işaretle
+      if (wasFirstOpen) p.openedThisTurn = true;
       p.openedSets = [...p.openedSets, ...setsToOpen];
       p.lastOpenScore = totalScore;
       // Bu sırada açılan taşları kaydet (geri al sadece bunları geri alır)

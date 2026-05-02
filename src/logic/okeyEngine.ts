@@ -159,18 +159,18 @@ export const findBestSets = (hand: (Tile | null)[], okeyTile: { number: number; 
     });
 
     for (let len = 3; len <= 4; len++) {
-      if (uniqueColors.length + wildcards.length >= len) {
-        const usedNormal = uniqueColors.slice(0, Math.min(uniqueColors.length, len));
-        const neededWildcards = len - usedNormal.length;
-        if (wildcards.length >= neededWildcards) {
-          const setTiles = [...usedNormal, ...wildcards.slice(0, neededWildcards)];
-          let score = calculateSetScore({ tiles: setTiles, type: "group", score: 0 }, okeyTile);
-          // Akıllı okey kullanımı: wildcard, zaten 3+ normal taşla tamamlanmış
-          // bir grubu büyütmek için "boşa" harcanıyorsa adayın değerini düşür.
-          // Böylece backtrack, okey'i başka bir per oluşturmak için saklamayı tercih eder.
-          if (neededWildcards > 0 && usedNormal.length >= 3) {
-            score -= 50 * neededWildcards;
-          }
+      const usedNormal = uniqueColors.slice(0, Math.min(uniqueColors.length, len));
+      const neededWildcards = len - usedNormal.length;
+      // Her perde en fazla 1 okey kullanabilir — iki okey varsa ayrı perdelere dağıt
+      if (neededWildcards > 1) continue;
+      if (neededWildcards === 0 && usedNormal.length === len) {
+        const score = calculateSetScore({ tiles: usedNormal, type: "group", score: 0 }, okeyTile);
+        allCandidates.push({ tiles: usedNormal, type: "group", score });
+      } else if (neededWildcards === 1 && wildcards.length >= 1) {
+        // Her okey taşı için ayrı aday üret — backtrack hangi okey'i nereye koyacağını seçer
+        for (const wc of wildcards) {
+          const setTiles = [...usedNormal, wc];
+          const score = calculateSetScore({ tiles: setTiles, type: "group", score: 0 }, okeyTile);
           allCandidates.push({ tiles: setTiles, type: "group", score });
         }
       }
@@ -184,26 +184,38 @@ export const findBestSets = (hand: (Tile | null)[], okeyTile: { number: number; 
     for (let len = 3; len <= 13; len++) {
       for (let startNum = 1; startNum <= 13 - len + 1; startNum++) {
         const runNumbers = Array.from({ length: len }, (_, i) => startNum + i);
-        let currentRun: Tile[] = [];
-        let usedWildcardsCount = 0;
-        let possible = true;
+
+        // Önce normal taşlarla iskeleti doldur, okey gereken pozisyonları işaretle
+        const skeleton: (Tile | null)[] = [];
+        let wildSlotsNeeded = 0;
 
         for (const targetNum of runNumbers) {
-          const available = colorTiles.find(t => getEffectiveTile(t, okeyTile).number === targetNum && !currentRun.some(rt => rt.id === t.id));
-          if (available) { currentRun.push(available); }
-          else if (usedWildcardsCount < wildcards.length) { currentRun.push(wildcards[usedWildcardsCount++]); }
-          else { possible = false; break; }
+          const available = colorTiles.find(t =>
+            getEffectiveTile(t, okeyTile).number === targetNum &&
+            !skeleton.some(rt => rt !== null && rt.id === t.id)
+          );
+          if (available) {
+            skeleton.push(available);
+          } else {
+            skeleton.push(null);
+            wildSlotsNeeded++;
+          }
         }
 
-        if (possible) {
-          let score = calculateSetScore({ tiles: currentRun, type: "run", score: 0 }, okeyTile);
-          // Akıllı okey kullanımı: zaten 3+ normal taşla geçerli bir seri varken
-          // wildcard ile uzatmak adayı küçük bir cezayla geri çek.
-          const normalInRun = currentRun.length - usedWildcardsCount;
-          if (usedWildcardsCount > 0 && normalInRun >= 3) {
-            score -= 50 * usedWildcardsCount;
+        // Her perde en fazla 1 okey — iki slot gerekiyorsa bu adayı atla
+        if (wildSlotsNeeded > 1) continue;
+
+        if (wildSlotsNeeded === 0) {
+          const runTiles = skeleton as Tile[];
+          const score = calculateSetScore({ tiles: runTiles, type: "run", score: 0 }, okeyTile);
+          allCandidates.push({ tiles: runTiles, type: "run", score });
+        } else if (wildcards.length >= 1) {
+          // Her okey taşı için ayrı aday üret
+          for (const wc of wildcards) {
+            const currentRun = skeleton.map(t => t ?? wc) as Tile[];
+            const score = calculateSetScore({ tiles: currentRun, type: "run", score: 0 }, okeyTile);
+            allCandidates.push({ tiles: currentRun, type: "run", score });
           }
-          allCandidates.push({ tiles: currentRun, type: "run", score });
         }
       }
     }
@@ -469,6 +481,7 @@ export const aiTakeTurn = (gameState: GameState): Partial<GameState> | null => {
       currentPlayer.openedWithType = 'sets';
       currentPlayer.openedSets = sets;
       currentPlayer.lastOpenScore = totalScore;
+      currentPlayer.openedThisTurn = true; // elden bitirme tespiti için
     } else {
       currentPlayer.openedSets = [...currentPlayer.openedSets, ...sets];
     }
@@ -565,7 +578,8 @@ export const aiTakeTurn = (gameState: GameState): Partial<GameState> | null => {
 
   if (currentPlayer.hand.every(t => t === null)) {
     const isOkeyFinish = isWildcard(discarded, gameState.okeyTile);
-    const isHandFinish = currentPlayer.openedSets.length === 0 && currentPlayer.openedPairs.length === 0;
+    // Elden bitirme: AI bu turda ilk kez açıp aynı turda bitirdiyse
+    const isHandFinish = currentPlayer.openedThisTurn === true;
     let winMsg = `${currentPlayer.name} oyunu bitirdi! (-101)`;
     if (isHandFinish && isOkeyFinish) winMsg = `${currentPlayer.name} ELDEN + OKEY ile bitirdi! (-404, ×4 ceza)`;
     else if (isHandFinish) winMsg = `${currentPlayer.name} ELDEN bitirdi! (-202, ×2 ceza)`;
@@ -577,6 +591,7 @@ export const aiTakeTurn = (gameState: GameState): Partial<GameState> | null => {
       logs: [...logs, winMsg],
       phase: GamePhase.FINISHED,
       winnerId: currentPlayer.id,
+      hasHandFinish: isHandFinish,
     };
   }
 
@@ -609,10 +624,10 @@ export const getFinishType = (
   finisherId: string | null,
   discardedTile: Tile | null
 ): FinishType => {
-  if (!finisherId || !discardedTile) return "normal";
-  const finisher = gameState.players.find(p => p.id === finisherId);
-  const isHandFinish = !!(finisher && finisher.openedSets.length === 0 && finisher.openedPairs.length === 0);
-  const isOkeyDiscard = isWildcard(discardedTile, gameState.okeyTile);
+  if (!finisherId) return "normal";
+  // hasHandFinish: oyuncu aynı turda hem el açıp hem bitirdiyse (elden bitirme)
+  const isHandFinish = gameState.hasHandFinish;
+  const isOkeyDiscard = discardedTile ? isWildcard(discardedTile, gameState.okeyTile) : false;
   if (isHandFinish && isOkeyDiscard) return "okeyElden";
   if (isHandFinish) return "elden";
   if (isOkeyDiscard) return "okey";

@@ -28,6 +28,7 @@ const initializePlayers = (numPlayers: number, isPartnerMode: boolean): Player[]
       canUndoOpen: false,
       hasUndoneThisRound: false,
       currentTurnOpenedTileIds: [],
+      openedThisTurn: false,
     });
   }
   return players;

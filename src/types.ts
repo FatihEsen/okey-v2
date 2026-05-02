@@ -48,6 +48,8 @@ export interface Player {
   hasUndoneThisRound: boolean; 
   // Bu sırada (turda) açılan taşların id'leri — geri al sadece bunları geri alır.
   currentTurnOpenedTileIds: string[];
+  // Bu turda ilk kez el açıldıysa true — elden bitirme tespiti için.
+  openedThisTurn: boolean;
 }
 
 export enum GameMode {
