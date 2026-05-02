@@ -610,6 +610,24 @@ export const aiTakeTurn = (gameState: GameState): Partial<GameState> | null => {
     });
   }
 
+  // AI tüm taşlarını setlere işlediyse → discard olmadan kazandı
+  if (currentPlayer.hasOpened && currentPlayer.hand.every(t => t === null)) {
+    const isHandFinish = currentPlayer.openedThisTurn === true;
+    const winMsg = isHandFinish
+      ? `${currentPlayer.name} ELDEN bitirdi! (-202, ×2 ceza)`
+      : `${currentPlayer.name} oyunu bitirdi! (-101)`;
+    players[gameState.currentPlayerIndex] = currentPlayer;
+    return {
+      players,
+      deck,
+      discardPile,
+      logs: [...logs, winMsg],
+      phase: GamePhase.FINISHED,
+      winnerId: currentPlayer.id,
+      hasHandFinish: isHandFinish,
+    };
+  }
+
   let discardIdx = -1;
   const handTiles = currentPlayer.hand.filter((t): t is Tile => t !== null);
   const safeTiles = handTiles.filter(t => !isWildcard(t, gameState.okeyTile) && !isPlayableAnywhere(t, players, gameState.okeyTile));
@@ -625,7 +643,20 @@ export const aiTakeTurn = (gameState: GameState): Partial<GameState> | null => {
     discardIdx = currentPlayer.hand.findIndex(t => t !== null && !isWildcard(t, gameState.okeyTile));
     if (discardIdx === -1) discardIdx = currentPlayer.hand.findIndex(t => t !== null);
   }
-  
+
+  // Atılacak taş bulunamadıysa (olağandışı durum) el boş sayılır
+  if (discardIdx === -1) {
+    players[gameState.currentPlayerIndex] = currentPlayer;
+    return {
+      players,
+      deck,
+      discardPile,
+      logs: [...logs, `${currentPlayer.name} elinde atılacak taş kalmadı.`],
+      phase: GamePhase.FINISHED,
+      winnerId: currentPlayer.id,
+    };
+  }
+
   const discarded = currentPlayer.hand[discardIdx]!;
   currentPlayer.hand[discardIdx] = null;
   currentPlayer.lastDiscardedTile = discarded;
