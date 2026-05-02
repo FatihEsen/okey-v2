@@ -117,6 +117,8 @@ export default function App() {
   const [selectedTiles, setSelectedTiles] = useState<string[]>([]);
   const [showSettings, setShowSettings] = useState(false);
   const [gameMode, setGameMode] = useState<GameMode>(GameMode.STANDARD);
+  const [totalRounds, setTotalRounds] = useState<number>(1);
+  const [showRoundPicker, setShowRoundPicker] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: "error" | "warning" | "info" } | null>(null);
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
     if (typeof window !== "undefined") {
@@ -1291,6 +1293,27 @@ export default function App() {
             </div>
 
             <div className="flex items-center gap-2">
+              <div className="relative">
+                <button
+                  onClick={() => setShowRoundPicker(p => !p)}
+                  className="flex items-center gap-1 px-3 py-2 rounded-lg bg-slate-700 text-slate-200 hover:bg-slate-600 transition-colors text-sm font-bold"
+                >
+                  {totalRounds} El ▾
+                </button>
+                {showRoundPicker && (
+                  <div className="absolute top-full mt-1 right-0 z-50 bg-slate-800 border border-slate-700 rounded-lg shadow-xl overflow-hidden">
+                    {[1, 3, 5, 7].map(n => (
+                      <button
+                        key={n}
+                        onClick={() => { setTotalRounds(n); setShowRoundPicker(false); }}
+                        className={`block w-full px-5 py-2 text-sm font-bold text-left hover:bg-slate-700 transition-colors ${totalRounds === n ? "text-blue-400" : "text-slate-200"}`}
+                      >
+                        {n} El
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <button 
                 onClick={initGame}
                 className="flex items-center gap-1 px-3 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors text-sm font-bold"
@@ -1563,7 +1586,7 @@ export default function App() {
               </div>
               <div className="flex items-center justify-center gap-2 mb-2">
                 <span className={`text-xs font-bold px-3 py-1 rounded-full ${isDarkMode ? "bg-slate-700 text-slate-400" : "bg-slate-100 text-slate-500"}`}>
-                  EL {gameState.roundNumber}
+                  EL {gameState.roundNumber} / {totalRounds}
                 </span>
               </div>
               <h2 className={`text-3xl font-black mb-2 ${isDarkMode ? "text-slate-100" : "text-slate-900"}`}>
@@ -1623,15 +1646,17 @@ export default function App() {
               </div>
 
               <div className="flex gap-3 mb-2">
-                <button
-                  onClick={newRound}
-                  className="flex-1 py-4 bg-emerald-600 text-white rounded-3xl font-bold text-base shadow-xl shadow-emerald-200/20 hover:bg-emerald-500 transition-all active:scale-95"
-                >
-                  Yeni El →
-                </button>
+                {gameState.roundNumber < totalRounds ? (
+                  <button
+                    onClick={newRound}
+                    className="flex-1 py-4 bg-emerald-600 text-white rounded-3xl font-bold text-base shadow-xl shadow-emerald-200/20 hover:bg-emerald-500 transition-all active:scale-95"
+                  >
+                    Sonraki El →
+                  </button>
+                ) : null}
                 <button 
                   onClick={initGame}
-                  className="flex-1 py-4 bg-slate-600 text-white rounded-3xl font-bold text-base hover:bg-slate-500 transition-all active:scale-95"
+                  className={`py-4 text-white rounded-3xl font-bold text-base transition-all active:scale-95 ${gameState.roundNumber < totalRounds ? "flex-none px-6 bg-slate-600 hover:bg-slate-500" : "flex-1 bg-blue-600 hover:bg-blue-700 shadow-xl shadow-blue-200/20"}`}
                 >
                   Yeni Oyun
                 </button>
