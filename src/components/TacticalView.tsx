@@ -97,6 +97,9 @@ export interface TacticalViewProps {
   calculateFinalScores: (gs: GameState, winnerId: string | null, last: Tile | null) => Record<string, number>;
   getFinishType: (gs: GameState, winnerId: string | null, last: Tile | null) => string;
   getScoreExplanation: (score: number, isWinner: boolean, hasOpened: boolean, ft?: string) => string;
+  onHandReorder: (newHand: (Tile | null)[]) => void;
+  onSortSets: () => void;
+  onSortPairs: () => void;
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -108,7 +111,24 @@ export function TacticalView(props: TacticalViewProps) {
     onTryToOpen, onTryToOpenPairs, onUndoOpen, onProcessTile,
     onReturnDrawnTile, onNewRound, onNewGame, onSwitchTheme,
     setTotalRounds, calculateFinalScores, getFinishType, getScoreExplanation,
+    onHandReorder, onSortSets, onSortPairs,
   } = props;
+
+  // ── Manuel taş taşıma: seçili taş varken boş slota tıklanınca oraya git ──
+  const handleSlotClick = (slotIdx: number) => {
+    const tile = me.hand[slotIdx];
+    if (tile) {
+      onTileClick(tile);
+    } else if (selectedTiles.length === 1) {
+      const srcIdx = me.hand.findIndex(t => t?.id === selectedTiles[0]);
+      if (srcIdx !== -1) {
+        const newHand = [...me.hand];
+        newHand[slotIdx] = newHand[srcIdx];
+        newHand[srcIdx] = null;
+        onHandReorder(newHand);
+      }
+    }
+  };
 
   const logEndRef = useRef<HTMLDivElement>(null);
   useEffect(() => { logEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [gameState.logs]);
@@ -287,17 +307,26 @@ export function TacticalView(props: TacticalViewProps) {
             </div>
 
             {/* 2-row rack — 15 slots per row, mirrors classic Rack */}
+            {/* Click tile to select; click empty slot to move selected tile there */}
             <div
               className="p-1 border border-black bg-gray-50"
               style={{ display: "grid", gridTemplateColumns: "repeat(15, minmax(0,1fr))", gap: "2px" }}
             >
               {Array.from({ length: 30 }, (_, slotIdx) => {
                 const tile = me.hand[slotIdx] ?? null;
+                const isSelected = tile ? selectedTiles.includes(tile.id) : false;
+                const isDropTarget = !tile && selectedTiles.length === 1 && isMyTurn;
                 if (!tile) {
                   return (
                     <div
                       key={slotIdx}
-                      className="border border-dashed border-gray-300 rounded-sm"
+                      onClick={() => handleSlotClick(slotIdx)}
+                      className={[
+                        "border rounded-sm transition-colors",
+                        isDropTarget
+                          ? "border-black bg-gray-200 cursor-pointer"
+                          : "border-dashed border-gray-300",
+                      ].join(" ")}
                       style={{ height: "44px" }}
                     />
                   );
@@ -307,9 +336,9 @@ export function TacticalView(props: TacticalViewProps) {
                     key={tile.id}
                     tile={tile}
                     size="sm"
-                    selected={selectedTiles.includes(tile.id)}
+                    selected={isSelected}
                     okeyTile={gameState.okeyTile}
-                    onClick={() => onTileClick(tile)}
+                    onClick={() => handleSlotClick(slotIdx)}
                     disabled={!isMyTurn || gameState.phase === GamePhase.DRAWING}
                   />
                 );
@@ -318,43 +347,21 @@ export function TacticalView(props: TacticalViewProps) {
           </div>
 
           {/* ── ACTION BUTTONS ──────────────────────────────────────── */}
-          <div className="border-t border-black px-4 py-2 flex flex-wrap gap-1.5">
-            <Btn
-              label="DRAW DECK"
-              onClick={onDrawFromDeck}
-              disabled={!canDraw}
-            />
-            <Btn
-              label="DRAW DISCARD"
-              onClick={onDrawFromDiscard}
-              disabled={!canDraw || !topDiscard}
-            />
-            <Btn
-              label="DISCARD"
-              onClick={onDiscardSelected}
-              disabled={!canDiscard}
-            />
-            <Btn
-              label="OPEN SETS"
-              onClick={onTryToOpen}
-              disabled={!canOpen}
-              solid
-            />
-            <Btn
-              label="OPEN PAIRS"
-              onClick={onTryToOpenPairs}
-              disabled={!canOpen}
-              solid
-            />
-            <Btn
-              label="UNDO"
-              onClick={onUndoOpen}
-              disabled={!isMyTurn || !me.canUndoOpen}
-              dashed
-            />
+          <div className="border-t border-black px-4 pt-2 pb-1 flex flex-wrap gap-1.5">
+            <Btn label="DRAW DECK"     onClick={onDrawFromDeck}     disabled={!canDraw} />
+            <Btn label="DRAW DISCARD"  onClick={onDrawFromDiscard}  disabled={!canDraw || !topDiscard} />
+            <Btn label="DISCARD"       onClick={onDiscardSelected}  disabled={!canDiscard} />
+            <Btn label="OPEN SETS"     onClick={onTryToOpen}        disabled={!canOpen} solid />
+            <Btn label="OPEN PAIRS"    onClick={onTryToOpenPairs}   disabled={!canOpen} solid />
+            <Btn label="UNDO"          onClick={onUndoOpen}         disabled={!isMyTurn || !me.canUndoOpen} dashed />
             {!!me.drawnFromDiscardTile && (
               <Btn label="GERİ BIRAK" onClick={onReturnDrawnTile} disabled={!isMyTurn} dashed />
             )}
+          </div>
+          {/* ── SORT BUTTONS ────────────────────────────────────────── */}
+          <div className="px-4 pb-2 flex gap-1.5">
+            <Btn label="SORT SETS"  onClick={onSortSets}  disabled={false} />
+            <Btn label="SORT PAIRS" onClick={onSortPairs} disabled={false} />
           </div>
 
           {/* Phase indicator */}

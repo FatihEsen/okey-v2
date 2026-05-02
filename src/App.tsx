@@ -1344,6 +1344,13 @@ export default function App() {
           calculateFinalScores={calculateFinalScores}
           getFinishType={getFinishType}
           getScoreExplanation={getScoreExplanation}
+          onHandReorder={(newHand) => {
+            const newPlayers = gameState.players.map((p, i) => i === 0 ? { ...p, hand: newHand } : p);
+            setGameState({ ...gameState, players: newPlayers });
+            setSelectedTiles([]);
+          }}
+          onSortSets={autoSortSets}
+          onSortPairs={autoSortPairs}
         />
         <AnimatePresence>
           {toast && (
