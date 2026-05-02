@@ -12,6 +12,7 @@ import {
   isValidGroup,
   calculateSetScore,
   calculateHandTotal,
+  findBestSets,
 } from "../logic/okeyEngine";
 import { TileComponent } from "./TileComponent";
 
@@ -26,6 +27,7 @@ interface RackProps {
   onSelect: (id: string, additive: boolean) => void;
   onReorder: (newHand: (Tile | null)[]) => void;
   disabled: boolean;
+  highlightedIds?: Set<string>;
 }
 
 const Rack: React.FC<RackProps> = ({
@@ -35,6 +37,7 @@ const Rack: React.FC<RackProps> = ({
   onSelect,
   onReorder,
   disabled,
+  highlightedIds,
 }) => {
   // Sürükleme state'i
   const [dragState, setDragState] = useState<{
@@ -240,6 +243,7 @@ const Rack: React.FC<RackProps> = ({
         const isGhost = dragState?.started && realTile && isDraggingSet.has(realTile.id);
         const isPreview = slotIdx in previewMap && !(dragState?.sourceSlots.includes(slotIdx));
         const isSelected = realTile ? selectedIds.includes(realTile.id) : false;
+        const isHighlighted = realTile ? (highlightedIds?.has(realTile.id) ?? false) : false;
         const isHoveredTarget =
           dragState?.started &&
           dragState.hoveredSlot !== null &&
@@ -269,8 +273,12 @@ const Rack: React.FC<RackProps> = ({
                   opacity: isGhost ? 0.3 : isPreview ? 0.7 : 1,
                   transform: isSelected && !dragState?.started ? "translateY(-6px)" : "none",
                   transition: "transform 0.1s, opacity 0.1s",
-                  outline: isHoveredTarget && dragState?.started ? "2px solid #3b82f6" : "none",
-                  outlineOffset: "1px",
+                  outline: isHoveredTarget && dragState?.started
+                    ? "2px solid #3b82f6"
+                    : isHighlighted && !isSelected
+                    ? "2px solid #4ade80"
+                    : "none",
+                  outlineOffset: "2px",
                   borderRadius: "6px",
                 }}
               >
@@ -372,6 +380,15 @@ export const PlayerHand = ({
     [player.hand, okeyTile]
   );
 
+  const bestSetIds = useMemo<Set<string>>(() => {
+    if (player.isAI) return new Set();
+    const tiles = player.hand.filter((t): t is Tile => t !== null);
+    const sets = findBestSets(tiles, okeyTile);
+    const ids = new Set<string>();
+    sets.forEach(s => s.tiles.forEach(t => ids.add(t.id)));
+    return ids;
+  }, [player.hand, okeyTile, player.isAI]);
+
   const hasAnythingToUndo =
     player.openedSets.length > 0 || player.openedPairs.length > 0;
 
@@ -429,6 +446,7 @@ export const PlayerHand = ({
           onSelect={handleSelect}
           onReorder={onHandReorder}
           disabled={player.isAI}
+          highlightedIds={bestSetIds}
         />
       </div>
 

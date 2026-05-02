@@ -319,9 +319,77 @@ export default function App() {
       hasContinuationDiscard: false,
       hasHandFinish: false,
       noOneOpened: false,
+      roundNumber: 1,
+      cumulativeScores: {},
     });
     setSelectedTiles([]);
   }, [gameMode]);
+
+  // Yeni El: kümülatif skoru koru, taşları yeniden dağıt
+  const newRound = useCallback(() => {
+    if (!gameState) return;
+    const discardedTile = gameState.discardPile.length > 0 ? gameState.discardPile[gameState.discardPile.length - 1] : null;
+    const finalScores = calculateFinalScores(gameState, gameState.winnerId, discardedTile);
+    const prevCumulative = gameState.cumulativeScores;
+    const newCumulative: { [id: string]: number } = {};
+    gameState.players.forEach(p => {
+      newCumulative[p.id] = (prevCumulative[p.id] ?? 0) + (finalScores[p.id] ?? 0);
+    });
+
+    const deck = shuffle(createDeck());
+    const nonJokerIndices = deck.map((t, i) => t.color === Color.JOKER ? null : i).filter((i): i is number => i !== null);
+    const indicatorIndex = nonJokerIndices[Math.floor(Math.random() * nonJokerIndices.length)];
+    const [indicator] = deck.splice(indicatorIndex, 1);
+    const okeyTile = determineOkey(indicator);
+
+    const players: Player[] = gameState.players.map((p, idx) => ({
+      ...p,
+      hand: [],
+      openedSets: [],
+      openedPairs: [],
+      score: 0,
+      hasOpened: false,
+      openedWithType: null,
+      openedWithPairs: false,
+      lastOpenScore: 0,
+      canUndoOpen: false,
+      hasUndoneThisRound: false,
+      currentTurnOpenedTileIds: [],
+      openedThisTurn: false,
+      mustOpen: false,
+      drawnFromDiscardTile: null,
+      lastDiscardedTile: null,
+    }));
+    players[0].hand = sortBySets([...deck.splice(0, 22)], okeyTile);
+    players[1].hand = [...deck.splice(0, 21), ...Array(9).fill(null)];
+    players[2].hand = [...deck.splice(0, 21), ...Array(9).fill(null)];
+    players[3].hand = [...deck.splice(0, 21), ...Array(9).fill(null)];
+
+    setGameState({
+      mode: gameState.mode,
+      players,
+      currentPlayerIndex: 0,
+      deck,
+      discardPile: [],
+      indicator,
+      okeyTile,
+      phase: GamePhase.PLAYING,
+      currentOpenScore: 0,
+      currentOpenPairs: 0,
+      lastOpeningScore: 0,
+      lastOpeningPairs: 0,
+      winnerId: null,
+      logs: [`El ${gameState.roundNumber + 1} başladı!`],
+      hasDoubleOpen: false,
+      hasOkeyDiscard: false,
+      hasContinuationDiscard: false,
+      hasHandFinish: false,
+      noOneOpened: false,
+      roundNumber: gameState.roundNumber + 1,
+      cumulativeScores: newCumulative,
+    });
+    setSelectedTiles([]);
+  }, [gameState]);
 
   useEffect(() => {
     if (!gameState) initGame();
@@ -1493,6 +1561,11 @@ export default function App() {
                   <Trophy size={40} className="text-white" />
                 </div>
               </div>
+              <div className="flex items-center justify-center gap-2 mb-2">
+                <span className={`text-xs font-bold px-3 py-1 rounded-full ${isDarkMode ? "bg-slate-700 text-slate-400" : "bg-slate-100 text-slate-500"}`}>
+                  EL {gameState.roundNumber}
+                </span>
+              </div>
               <h2 className={`text-3xl font-black mb-2 ${isDarkMode ? "text-slate-100" : "text-slate-900"}`}>
                 {gameState.winnerId ? "Tebrikler!" : "Oyun Bitti!"}
               </h2>
@@ -1510,8 +1583,8 @@ export default function App() {
                 )}
               </p>
 
-              <div className={`rounded-2xl p-4 mb-8 border ${isDarkMode ? "bg-slate-800 border-slate-700" : "bg-slate-50 border-slate-100"}`}>
-                <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-3">Skor Tablosu</h3>
+              <div className={`rounded-2xl p-4 mb-4 border ${isDarkMode ? "bg-slate-800 border-slate-700" : "bg-slate-50 border-slate-100"}`}>
+                <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-3">Bu El</h3>
                 <div className="space-y-2">
                   {(() => {
                     const discardedTile = gameState.discardPile.length > 0 ? gameState.discardPile[gameState.discardPile.length - 1] : null;
@@ -1521,8 +1594,10 @@ export default function App() {
                       const score = finalScores[p.id];
                       const isWinner = p.id === gameState.winnerId;
                       const explanation = getScoreExplanation(score, isWinner, p.hasOpened, isWinner ? finishType : undefined);
+                      const prevCumul = gameState.cumulativeScores[p.id] ?? 0;
+                      const newCumul = prevCumul + (score ?? 0);
                       return (
-                        <div key={p.id} className={`flex items-center justify-between p-3 rounded-xl ${isWinner ? (isDarkMode ? 'bg-yellow-900/20 border-yellow-800' : 'bg-yellow-100 border-yellow-200') : (isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200')}`}>
+                        <div key={p.id} className={`flex items-center justify-between p-3 rounded-xl border ${isWinner ? (isDarkMode ? 'bg-yellow-900/20 border-yellow-800' : 'bg-yellow-100 border-yellow-200') : (isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200')}`}>
                           <div className="flex flex-col">
                             <div className="flex items-center gap-2">
                               <span className={`font-bold ${isDarkMode ? "text-slate-200" : "text-slate-700"}`}>{p.name}</span>
@@ -1531,9 +1606,14 @@ export default function App() {
                             <span className="text-[9px] text-slate-500 mt-0.5">{explanation}</span>
                           </div>
                           <div className="text-right">
-                            <span className={`font-black text-lg ${score < 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                            <div className={`font-black text-lg ${score < 0 ? 'text-emerald-500' : 'text-red-500'}`}>
                               {score > 0 ? `+${score}` : score}
-                            </span>
+                            </div>
+                            {gameState.roundNumber > 1 && (
+                              <div className={`text-[10px] font-bold ${newCumul < 0 ? 'text-emerald-400' : 'text-slate-400'}`}>
+                                toplam: {newCumul > 0 ? `+${newCumul}` : newCumul}
+                              </div>
+                            )}
                           </div>
                         </div>
                       );
@@ -1541,13 +1621,21 @@ export default function App() {
                   })()}
                 </div>
               </div>
-              
-              <button 
-                onClick={initGame}
-                className="w-full py-4 bg-blue-600 text-white rounded-3xl font-bold text-lg shadow-xl shadow-blue-200 hover:bg-blue-700 transition-all active:scale-95"
-              >
-                Yeni Oyun Başlat
-              </button>
+
+              <div className="flex gap-3 mb-2">
+                <button
+                  onClick={newRound}
+                  className="flex-1 py-4 bg-emerald-600 text-white rounded-3xl font-bold text-base shadow-xl shadow-emerald-200/20 hover:bg-emerald-500 transition-all active:scale-95"
+                >
+                  Yeni El →
+                </button>
+                <button 
+                  onClick={initGame}
+                  className="flex-1 py-4 bg-slate-600 text-white rounded-3xl font-bold text-base hover:bg-slate-500 transition-all active:scale-95"
+                >
+                  Yeni Oyun
+                </button>
+              </div>
             </motion.div>
           </div>
         )}

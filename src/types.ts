@@ -87,6 +87,8 @@ export interface GameState {
   hasContinuationDiscard: boolean; // Devam atılmışsa (aynı sayıda farklı renk)
   hasHandFinish: boolean; // Elden bitmişse (hiç taş işlememiş)
   noOneOpened: boolean; // Kimse açmadan el bittiyse
+  roundNumber: number; // Kaçıncı el
+  cumulativeScores: { [playerId: string]: number }; // Kümülatif skor
 }
 
 export type GameAction =
