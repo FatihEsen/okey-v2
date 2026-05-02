@@ -825,6 +825,9 @@ export default function App() {
       p.hasOpened = true;
       p.openedPairs = [...p.openedPairs, ...pairs];
       p.lastOpenScore = pairs.length;
+      // Bu sırada açılan taşları kaydet
+      const openedPairTileIds = pairs.flatMap(pair => pair.map(t => t.id));
+      p.currentTurnOpenedTileIds = [...p.currentTurnOpenedTileIds, ...openedPairTileIds];
 
       // Remove from hand
       pairs.forEach(pair => {
