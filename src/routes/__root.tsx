@@ -5,6 +5,7 @@ import {
   Scripts,
 } from "@tanstack/react-router";
 import * as React from "react";
+// @ts-expect-error - vite ?url import
 import appCss from "../styles.css?url";
 
 export const Route = createRootRoute({
