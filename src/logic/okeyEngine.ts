@@ -226,7 +226,9 @@ export const findPairs = (hand: (Tile | null)[], okeyTile: { number: number; col
   const pairs: Tile[][] = [];
   const usedIds = new Set<string>();
   const normalTiles = tiles.filter(t => !isWildcard(t, okeyTile));
+  const wildcards = tiles.filter(t => isWildcard(t, okeyTile));
 
+  // 1) Önce normal-normal eşleşmeleri bul
   for (let i = 0; i < normalTiles.length; i++) {
     if (usedIds.has(normalTiles[i].id)) continue;
     for (let j = i + 1; j < normalTiles.length; j++) {
@@ -241,6 +243,19 @@ export const findPairs = (hand: (Tile | null)[], okeyTile: { number: number; col
       }
     }
   }
+
+  // 2) Akıllı okey eşleme: her okey'i, eşi olmayan farklı bir normal taşla
+  //    potansiyel çift olarak işaretle. İki okey aynı taşa eşlenmez —
+  //    doğal olarak iki ayrı çift oluşur.
+  const lonelyNormals = normalTiles.filter(t => !usedIds.has(t.id));
+  for (const wc of wildcards) {
+    const partner = lonelyNormals.find(t => !usedIds.has(t.id));
+    if (!partner) break;
+    pairs.push([partner, wc]);
+    usedIds.add(partner.id);
+    usedIds.add(wc.id);
+  }
+
   return pairs;
 };
 
