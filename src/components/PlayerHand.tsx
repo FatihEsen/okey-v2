@@ -380,15 +380,6 @@ export const PlayerHand = ({
     [player.hand, okeyTile]
   );
 
-  const bestSetIds = useMemo<Set<string>>(() => {
-    if (player.isAI) return new Set();
-    const tiles = player.hand.filter((t): t is Tile => t !== null);
-    const sets = findBestSets(tiles, okeyTile);
-    const ids = new Set<string>();
-    sets.forEach(s => s.tiles.forEach(t => ids.add(t.id)));
-    return ids;
-  }, [player.hand, okeyTile, player.isAI]);
-
   const hasAnythingToUndo =
     player.openedSets.length > 0 || player.openedPairs.length > 0;
 
@@ -446,7 +437,6 @@ export const PlayerHand = ({
           onSelect={handleSelect}
           onReorder={onHandReorder}
           disabled={player.isAI}
-          highlightedIds={bestSetIds}
         />
       </div>
 
