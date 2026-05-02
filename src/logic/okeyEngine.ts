@@ -77,7 +77,7 @@ const getRunCandidateNumbers = (startNum: number, length: number): number[] | nu
 
 export const calculateDiscardPenalty = (tile: Tile, gameState: GameState, player: Player): { penalty: number; reason: string | null } => {
   let penalty = 0;
-  let reason = null;
+  let reason: string | null = null;
 
   if (isPlayableAnywhere(tile, gameState.players, gameState.okeyTile)) {
     penalty += 101;
@@ -85,8 +85,8 @@ export const calculateDiscardPenalty = (tile: Tile, gameState: GameState, player
   }
 
   if (isRealOkey(tile, gameState.okeyTile)) {
-    penalty += 101;
-    const okeyReason = `${player.name} OKEY attığı için 101 ceza aldı!`;
+    penalty += 202;
+    const okeyReason = `${player.name} OKEY attığı için 202 ceza aldı!`;
     reason = reason ? `${reason}\n${okeyReason}` : okeyReason;
   }
 
