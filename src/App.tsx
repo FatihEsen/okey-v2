@@ -984,6 +984,24 @@ export default function App() {
         const handIdx = p.hand.findIndex(ht => ht?.id === tile.id);
         p.hand[handIdx] = okeyTileInSet;
         
+        // Swap sonrası sıralama
+        if (targetSet.type === "run") {
+          const nIdx = targetSet.tiles.findIndex(t => !isWildcard(t, gameState.okeyTile));
+          if (nIdx !== -1) {
+            const anchor = getEffectiveTile(targetSet.tiles[nIdx], gameState.okeyTile).number;
+            const withRep = targetSet.tiles.map((t, i) => ({ tile: t, rep: anchor + (i - nIdx) }));
+            withRep.sort((a, b) => a.rep - b.rep);
+            targetSet.tiles = withRep.map(x => x.tile);
+          }
+        } else if (targetSet.type === "group") {
+          const colorOrder = [Color.RED, Color.YELLOW, Color.BLACK, Color.BLUE, Color.JOKER];
+          targetSet.tiles.sort((a, b) => {
+            if (isWildcard(a, gameState.okeyTile)) return 1;
+            if (isWildcard(b, gameState.okeyTile)) return -1;
+            return colorOrder.indexOf(a.color) - colorOrder.indexOf(b.color);
+          });
+        }
+
         // Update score
         targetSet.score = calculateSetScore(targetSet, gameState.okeyTile);
 

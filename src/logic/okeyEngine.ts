@@ -370,8 +370,41 @@ export const calculatePenalty = (player: Player, isHandFinished: boolean, gameSt
 };
 
 export const canProcessTile = (tile: Tile, set: Combination, okeyTile: { number: number; color: Color } | null): boolean => {
-  const newTiles = [...set.tiles, tile];
-  return set.type === "group" ? isValidGroup(newTiles, okeyTile) : isValidRun(newTiles, okeyTile);
+  if (set.type === "group") {
+    return isValidGroup([...set.tiles, tile], okeyTile);
+  }
+
+  // Run: okey uçtaysa sadece okeyin bulunduğu yönden uzatmaya izin ver
+  const hasOkey = set.tiles.some(t => isWildcard(t, okeyTile));
+  if (!hasOkey) {
+    return isValidRun([...set.tiles, tile], okeyTile);
+  }
+
+  const normalIdx = set.tiles.findIndex(t => !isWildcard(t, okeyTile));
+  if (normalIdx === -1) return false;
+
+  const anchorNum = getEffectiveTile(set.tiles[normalIdx], okeyTile).number;
+  const runColor = getEffectiveTile(set.tiles[normalIdx], okeyTile).color;
+  if (tile.color !== runColor) return false;
+
+  const representedNums = set.tiles.map((t, idx) => anchorNum + (idx - normalIdx));
+  const minNum = Math.min(...representedNums);
+  const maxNum = Math.max(...representedNums);
+
+  const okeyIdx = set.tiles.findIndex(t => isWildcard(t, okeyTile));
+  const okeyRepNum = anchorNum + (okeyIdx - normalIdx);
+
+  if (okeyRepNum === minNum) {
+    // Okey sol uçta → sadece sol tarafa (minNum - 1) uzatılabilir
+    return tile.number === minNum - 1 && minNum - 1 >= 1;
+  }
+  if (okeyRepNum === maxNum) {
+    // Okey sağ uçta → sadece sağ tarafa (maxNum + 1) uzatılabilir
+    return tile.number === maxNum + 1 && maxNum + 1 <= 13;
+  }
+
+  // Okey ortada → her iki uca da eklenebilir
+  return isValidRun([...set.tiles, tile], okeyTile);
 };
 
 export const canSwapOkey = (tile: Tile, set: Combination, okeyTile: { number: number; color: Color } | null): boolean => {
