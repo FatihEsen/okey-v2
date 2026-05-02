@@ -4,7 +4,7 @@
  */
 
 import { GameState, GameAction, GamePhase, GameMode, Player, Tile, Combination, Color } from "../types";
-import { createDeck, shuffle, determineOkey, isRealOkey, isFakeOkey, getEffectiveTile, calculateSetScore, isValidGroup, isValidRun, findBestSets, findPairs, calculatePenalty, isWildcard } from "./okeyEngine";
+import { createDeck, shuffle, determineOkey, isRealOkey, isFakeOkey, getEffectiveTile, calculateSetScore, isValidGroup, isValidRun, findBestSets, findPairs, calculatePenalty, isWildcard, calculateDiscardPenalty } from "./okeyEngine";
 import { canOpenWithSets, canOpenWithPairs } from "./okeyOpening";
 
 const INITIAL_PLAYER_HAND_SIZE = 14;
