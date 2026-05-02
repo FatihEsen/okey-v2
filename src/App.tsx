@@ -847,6 +847,7 @@ export default function App() {
       
       if (!p.hasOpened) {
         p.openedWithPairs = true;
+        p.openedThisTurn = true;
       }
       p.hasOpened = true;
       p.openedPairs = [...p.openedPairs, ...pairs];
