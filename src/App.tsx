@@ -563,6 +563,9 @@ export default function App() {
     if (selectedTiles.length > 0) {
       const tilesToProcess = player.hand.filter((t): t is Tile => t !== null && selectedTiles.includes(t.id));
       setsToOpen = findBestSets(tilesToProcess, gameState.okeyTile);
+      // findBestSets içindeki skorlar iç tercih için cezalı olabilir;
+      // burada gerçek per puanlarını yeniden hesapla.
+      setsToOpen = setsToOpen.map(s => ({ ...s, score: calculateSetScore(s, gameState.okeyTile) }));
     } else {
       // Parse physical arrangement
       const groups: Tile[][] = [];
