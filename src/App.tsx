@@ -610,13 +610,11 @@ export default function App() {
       )
     );
 
-    // Elden bitiş: Hiç taş işlememişse (openedSets ve openedPairs boş ve açtıysa bile)
-    const hasHandFinish = isWin && player.openedSets.length === 0 && player.openedPairs.length === 0;
-
     const newHasDoubleOpen = gameState.hasDoubleOpen || gameState.players.some(p => p.openedWithPairs && p.hasOpened);
     const newHasOkeyDiscard = gameState.hasOkeyDiscard || isOkeyDiscard;
     const newHasContinuationDiscard = gameState.hasContinuationDiscard || isContinuationDiscard;
-    const newHasHandFinish = gameState.hasHandFinish || hasHandFinish;
+    // isHandFinish: bu turda ilk kez açıp aynı turda bitirdi → elden bitiş
+    const newHasHandFinish = gameState.hasHandFinish || isHandFinish;
     const newNoOneOpened = !hasAnyoneOpened;
 
     setGameState({
