@@ -1,0 +1,127 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap');
+
+.minimal-tactical-theme {
+  --background: 0 0% 100%;
+  --foreground: 0 0% 0%;
+  
+  --muted: 0 0% 96%;
+  --muted-foreground: 0 0% 40%;
+  
+  --popover: 0 0% 100%;
+  --popover-foreground: 0 0% 0%;
+  
+  --card: 0 0% 100%;
+  --card-foreground: 0 0% 0%;
+  
+  --border: 0 0% 0%;
+  --input: 0 0% 0%;
+  
+  --primary: 0 0% 0%;
+  --primary-foreground: 0 0% 100%;
+  
+  --secondary: 0 0% 90%;
+  --secondary-foreground: 0 0% 0%;
+  
+  --accent: 0 0% 90%;
+  --accent-foreground: 0 0% 0%;
+  
+  --destructive: 0 100% 50%;
+  --destructive-foreground: 0 0% 100%;
+  
+  --ring: 0 0% 0%;
+  
+  --radius: 0;
+
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.minimal-tactical-theme * {
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+.minimal-tactical-theme .tile {
+  background: white;
+  border: 1px solid black;
+  color: black;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+}
+
+.minimal-tactical-theme .tile::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+}
+.minimal-tactical-theme .tile.color-red::after { background-color: #ff0000; }
+.minimal-tactical-theme .tile.color-yellow::after { background-color: #ffd700; }
+.minimal-tactical-theme .tile.color-black::after { background-color: #000000; }
+.minimal-tactical-theme .tile.color-blue::after { background-color: #0000ff; }
+
+.streamer-theme {
+  --background: 240 10% 4%;
+  --foreground: 0 0% 98%;
+  
+  --muted: 240 5% 15%;
+  --muted-foreground: 240 5% 65%;
+  
+  --popover: 240 10% 8%;
+  --popover-foreground: 0 0% 98%;
+  
+  --card: 240 10% 8%;
+  --card-foreground: 0 0% 98%;
+  
+  --border: 240 10% 12%;
+  --input: 240 10% 15%;
+  
+  --primary: 280 100% 60%; 
+  --primary-foreground: 0 0% 100%;
+  
+  --secondary: 190 100% 50%; 
+  --secondary-foreground: 0 0% 0%;
+  
+  --accent: 320 100% 55%; 
+  --accent-foreground: 0 0% 100%;
+  
+  --destructive: 0 100% 60%;
+  --destructive-foreground: 0 0% 100%;
+  
+  --ring: 280 100% 60%;
+  --radius: 0.5rem;
+
+  font-family: 'Outfit', sans-serif;
+}
+
+@keyframes slideInRight {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.streamer-theme .animate-chat-enter {
+  animation: slideInRight 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+.streamer-theme .bg-grid-pattern {
+  background-size: 40px 40px;
+  background-image: linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                    linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+}
+
+.streamer-theme .tile-shadow {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5), 0 2px 4px -1px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.streamer-theme .neon-text {
+  text-shadow: 0 0 10px hsl(var(--primary) / 0.5), 0 0 20px hsl(var(--primary) / 0.3);
+}
+
+.streamer-theme .neon-border {
+  box-shadow: 0 0 10px hsl(var(--primary) / 0.3), inset 0 0 10px hsl(var(--primary) / 0.3);
+}
