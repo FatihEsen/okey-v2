@@ -82,7 +82,7 @@ import {
 import { TileComponent, SortableTile } from "./components/TileComponent";
 import { PlayerHand } from "./components/PlayerHand";
 import { Board, PairsBoard } from "./components/Board";
-import { TacticalView } from "./components/TacticalView";
+
 import {
   DraggableDeck,
   DroppableDiscard,
@@ -128,18 +128,6 @@ export default function App() {
     }
     return true;
   });
-  const [isTactical, setIsTactical] = useState<boolean>(() => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("tacticalMode") === "true";
-    }
-    return false;
-  });
-  const toggleTactical = () => {
-    setIsTactical(prev => {
-      localStorage.setItem("tacticalMode", String(!prev));
-      return !prev;
-    });
-  };
 
   const showToast = useCallback((message: string, type: "error" | "warning" | "info" = "warning") => {
     setToast({ message, type });
@@ -1258,12 +1246,6 @@ export default function App() {
     return (
       <div className={`min-h-screen flex items-center justify-center p-6 transition-colors duration-300 ${isDarkMode ? "bg-slate-950" : "bg-slate-100"}`}>
         <div className="absolute top-6 right-6 flex gap-2">
-          <button
-            onClick={toggleTactical}
-            className={`px-3 py-2 rounded-xl text-xs font-bold uppercase tracking-widest transition-all border ${isDarkMode ? "bg-slate-800 text-slate-300 hover:bg-slate-700 border-slate-700" : "bg-white text-slate-600 hover:bg-slate-50 border-slate-200"}`}
-          >
-            TACTICAL
-          </button>
           <button 
             onClick={() => setIsDarkMode(!isDarkMode)}
             className={`p-3 rounded-full transition-all shadow-lg ${isDarkMode ? "bg-slate-800 text-amber-400 hover:bg-slate-700 border border-slate-700" : "bg-white text-slate-600 hover:bg-slate-50 border border-slate-200"}`}
@@ -1314,52 +1296,6 @@ export default function App() {
   }
 
   const currentPlayer = gameState.players[gameState.currentPlayerIndex];
-
-  // ── Tactical View ──────────────────────────────────────────────
-  if (isTactical) {
-    return (
-      <>
-        <TacticalView
-          gameState={gameState}
-          selectedTiles={selectedTiles}
-          totalRounds={totalRounds}
-          onTileClick={handleTileClick}
-          onDrawFromDeck={drawFromDeck}
-          onDrawFromDiscard={drawFromDiscard}
-          onDiscardSelected={() => {
-            if (selectedTiles.length === 1) {
-              const tile = gameState.players[gameState.currentPlayerIndex].hand.find(t => t?.id === selectedTiles[0]);
-              if (tile) discardTile(tile);
-            }
-          }}
-          onTryToOpen={tryToOpen}
-          onTryToOpenPairs={tryToOpenPairs}
-          onUndoOpen={undoAllOpens}
-          onProcessTile={processTile}
-          onReturnDrawnTile={returnDrawnTile}
-          onNewRound={newRound}
-          onNewGame={initGame}
-          onSwitchTheme={toggleTactical}
-          setTotalRounds={setTotalRounds}
-          calculateFinalScores={calculateFinalScores}
-          getFinishType={getFinishType}
-          getScoreExplanation={getScoreExplanation}
-          onHandReorder={(newHand) => {
-            const newPlayers = gameState.players.map((p, i) => i === 0 ? { ...p, hand: newHand } : p);
-            setGameState({ ...gameState, players: newPlayers });
-            setSelectedTiles([]);
-          }}
-          onSortSets={autoSortSets}
-          onSortPairs={autoSortPairs}
-        />
-        <AnimatePresence>
-          {toast && (
-            <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />
-          )}
-        </AnimatePresence>
-      </>
-    );
-  }
 
   return (
     <DndContext
@@ -1412,12 +1348,6 @@ export default function App() {
             </div>
 
             <div className="flex items-center gap-2">
-              <button
-                onClick={toggleTactical}
-                className="flex items-center gap-1 px-3 py-2 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 transition-colors text-xs font-bold uppercase tracking-widest border border-slate-700"
-              >
-                TACTICAL
-              </button>
               <div className="relative">
                 <button
                   onClick={() => setShowRoundPicker(p => !p)}
@@ -1611,6 +1541,9 @@ export default function App() {
                           <span className="text-[8px] px-1.5 py-0.5 bg-blue-500/10 text-blue-500 rounded-full font-black border border-blue-500/20">AÇTI</span>
                         ) : (
                           <span className="text-[8px] px-1.5 py-0.5 bg-red-500/10 text-red-500 rounded-full font-black border border-red-500/20">AÇMADI</span>
+                        )}
+                        {p.hasOpened && p.lastOpenScore > 0 && (
+                          <span className="text-[8px] px-1.5 py-0.5 bg-emerald-500/10 text-emerald-600 rounded-full font-black border border-emerald-500/20">{p.lastOpenScore} PTS</span>
                         )}
                         {p.openedWithPairs && (
                           <span className="text-[8px] px-1.5 py-0.5 bg-purple-500/10 text-purple-500 rounded-full font-black border border-purple-500/20">ÇİFT</span>
