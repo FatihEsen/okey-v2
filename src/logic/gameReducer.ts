@@ -4,7 +4,7 @@
  */
 
 import { GameState, GameAction, GamePhase, GameMode, Player, Tile, Combination, Color } from "../types";
-import { createDeck, shuffle, determineOkey, isRealOkey, isFakeOkey, getEffectiveTile, calculateSetScore, isValidGroup, isValidRun, findBestSets, findPairs, calculatePenalty, isWildcard } from "./okeyEngine";
+import { createDeck, shuffle, determineOkey, isRealOkey, isFakeOkey, getEffectiveTile, calculateSetScore, isValidGroup, isValidRun, findBestSets, findPairs, calculatePenalty, isWildcard, calculateDiscardPenalty } from "./okeyEngine";
 import { canOpenWithSets, canOpenWithPairs } from "./okeyOpening";
 
 const INITIAL_PLAYER_HAND_SIZE = 14;
@@ -175,9 +175,17 @@ export const gameReducer = (state: GameState, action: GameAction): GameState => 
 
       const nextPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
 
+      // İşler/okey atma cezası
+      const { penalty, reason } = calculateDiscardPenalty(discardedTile, state, currentPlayer);
+
       const updatedPlayers = state.players.map((p, idx) =>
-        idx === state.currentPlayerIndex ? { ...p, hand: newHand } : p
+        idx === state.currentPlayerIndex
+          ? { ...p, hand: newHand, score: p.score + penalty }
+          : p
       );
+
+      const newLogs = [...state.logs, `${currentPlayer.name} discarded ${discardedTile.color} ${discardedTile.number}.`];
+      if (reason) newLogs.push(reason);
 
       return {
         ...state,
@@ -185,7 +193,7 @@ export const gameReducer = (state: GameState, action: GameAction): GameState => 
         discardPile: [...state.discardPile, discardedTile],
         currentPlayerIndex: nextPlayerIndex,
         phase: GamePhase.DRAWING,
-        logs: [...state.logs, `${currentPlayer.name} discarded ${discardedTile.color} ${discardedTile.number}.`]
+        logs: newLogs,
       };
     }
 
