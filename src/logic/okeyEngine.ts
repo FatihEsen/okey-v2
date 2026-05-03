@@ -53,7 +53,6 @@ export const isWildcard = (tile: Tile, okeyTile: { number: number; color: Color 
   return isRealOkey(tile, okeyTile);
 };
 
-export const isOkeyLike = isWildcard;
 
 export const getEffectiveTile = (tile: Tile, okeyTile: { number: number; color: Color } | null): { number: number, color: Color } => {
   // Joker, okey'nin yerini tutar - okey'nin sayı/rengi olarak davranır
@@ -65,19 +64,11 @@ export const getEffectiveTile = (tile: Tile, okeyTile: { number: number; color: 
 
 export const getTileScore = (tile: Tile, okeyTile: { number: number; color: Color } | null): number => {
   if (isRealOkey(tile, okeyTile)) return 101;
-  // Joker de okey gibi 101 puan (okey'nin yerini tuttuğu için)
-  if (isFakeOkey(tile)) return 101;
+  // Sahte Okey (Joker), okeyin değerine sahiptir.
+  if (isFakeOkey(tile) && okeyTile) return okeyTile.number;
   return tile.number;
 };
 
-const getRunCandidateNumbers = (startNum: number, length: number): number[] | null => {
-  if (length < 3 || length > 13) return null;
-  const endNum = startNum + length - 1;
-  if (endNum <= 13) {
-    return Array.from({ length }, (_, idx) => startNum + idx);
-  }
-  return null;
-};
 
 export const calculateDiscardPenalty = (tile: Tile, gameState: GameState, player: Player): { penalty: number; reason: string | null } => {
   let penalty = 0;
@@ -310,19 +301,6 @@ export const calculateHandTotal = (hand: (Tile | null)[], okeyTile: { number: nu
   return hand.reduce((sum, tile) => sum + (tile ? getTileScore(tile, okeyTile) : 0), 0);
 };
 
-export const sortByStandard = (hand: (Tile | null)[]): (Tile | null)[] => {
-  const tiles = hand.filter((t): t is Tile => t !== null);
-  const sorted = [...tiles].sort((a, b) => {
-    if (a.color !== b.color) {
-      const colorOrder = [Color.RED, Color.YELLOW, Color.BLACK, Color.BLUE, Color.JOKER];
-      return colorOrder.indexOf(a.color) - colorOrder.indexOf(b.color);
-    }
-    return a.number - b.number;
-  });
-  const result: (Tile | null)[] = new Array(30).fill(null);
-  sorted.forEach((t, i) => { if (i < 30) result[i] = t; });
-  return result;
-};
 
 export const sortByPairs = (hand: (Tile | null)[], okeyTile: { number: number; color: Color } | null): (Tile | null)[] => {
   const tiles = hand.filter((t): t is Tile => t !== null);
@@ -398,30 +376,26 @@ export const canProcessTile = (tile: Tile, set: Combination, okeyTile: { number:
     return isValidGroup([...set.tiles, tile], okeyTile);
   }
 
-  // Run: Okey varsa, temsil ettiği sayı sabit kalmalı
-  const hasOkey = set.tiles.some(t => isWildcard(t, okeyTile));
-  if (hasOkey) {
-    const normalIdx = set.tiles.findIndex(t => !isWildcard(t, okeyTile));
-    if (normalIdx === -1) return false;
+  // Run: Uçlara ekleme kontrolü
+  const normalIdx = set.tiles.findIndex(t => !isWildcard(t, okeyTile));
+  if (normalIdx === -1) return false;
 
-    const anchorNum = getEffectiveTile(set.tiles[normalIdx], okeyTile).number;
-    const runColor = getEffectiveTile(set.tiles[normalIdx], okeyTile).color;
-    if (tile.color !== runColor) return false;
+  const anchorNum = getEffectiveTile(set.tiles[normalIdx], okeyTile).number;
+  const runColor = getEffectiveTile(set.tiles[normalIdx], okeyTile).color;
 
-    // Okeyin temsil ettiği sayı(lar) — bu sayılara taş eklenemez
-    const okeyRepNums = set.tiles
-      .map((t, idx) => isWildcard(t, okeyTile) ? anchorNum + (idx - normalIdx) : null)
-      .filter((n): n is number => n !== null);
+  const startNum = anchorNum - normalIdx;
+  const endNum = startNum + set.tiles.length - 1;
 
-    // Eklenecek taşın sayısı okey'in temsil ettiği sayı olmamalı
-    if (okeyRepNums.includes(tile.number)) return false;
-
-    // Seri'nin uçlarından uzatılabilir
-    return isValidRun([...set.tiles, tile], okeyTile);
+  if (isWildcard(tile, okeyTile)) {
+    // Eklenecek taş Okey ise 1 ve 13 sınırlarına dikkat et
+    return startNum > 1 || endNum < 13;
   }
 
-  // Okey olmayan seri'ye yeni taş işlenebilir
-  return isValidRun([...set.tiles, tile], okeyTile);
+  const effectiveTile = getEffectiveTile(tile, okeyTile);
+  if (effectiveTile.color !== runColor) return false;
+  
+  // Sadece tam uca eklenmesine izin ver
+  return effectiveTile.number === startNum - 1 || effectiveTile.number === endNum + 1;
 };
 
 export const canSwapOkey = (tile: Tile, set: Combination, okeyTile: { number: number; color: Color } | null): boolean => {

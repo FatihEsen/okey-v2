@@ -26,6 +26,7 @@ export const sizeClasses = {
 
 export const TileComponent = ({
   tile,
+  isOkey,
   onClick,
   isSelected,
   size = "md",
@@ -53,6 +54,9 @@ export const TileComponent = ({
       <span className={`font-bold ${colorTextMap[tile.color]}`}>
         {tile.color === Color.JOKER ? "★" : tile.number}
       </span>
+      {isOkey && (
+        <div className="absolute top-1 right-1 w-2 h-2 bg-yellow-400 rounded-full shadow-sm ring-1 ring-yellow-600" title="Okey Taşı" />
+      )}
     </motion.div>
   );
 };

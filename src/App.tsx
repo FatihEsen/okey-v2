@@ -5,20 +5,10 @@ import {
   RotateCcw, 
   Play, 
   Settings, 
-  Info, 
   ChevronRight, 
-  User, 
-  Cpu, 
-  CheckCircle2, 
   AlertCircle,
-  ArrowDown,
   Hash,
   Layers,
-  ArrowLeftRight,
-  LayoutGrid,
-  Copy,
-  GripVertical,
-  LogOut,
   Moon,
   Sun,
 } from "lucide-react";
@@ -39,7 +29,6 @@ import {
   arrayMove,
   SortableContext,
   sortableKeyboardCoordinates,
-  rectSortingStrategy,
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -74,7 +63,6 @@ import {
   sortBySets,
   sortByPairs,
   isWildcard,
-  isOkeyLike,
   isValidRun,
   isValidGroup,
   isPlayableAnywhere
@@ -588,7 +576,7 @@ export default function App() {
     // --- END: Penalty Checks ---
 
     const isWin = newPlayers[gameState.currentPlayerIndex].hand.every(t => t === null);
-    const isOkeyFinish = isWin && isOkeyLike(tile, gameState.okeyTile);
+    const isOkeyFinish = isWin && isWildcard(tile, gameState.okeyTile);
     // Elden bitirme: oyuncu aynı turda hem ilk kez el açtıysa hem bitirdiyse
     const isHandFinish = isWin && player.openedThisTurn === true;
     let winMsg = `${player.name} ${tile.number} ${tile.color} attı.`;
@@ -1066,10 +1054,17 @@ export default function App() {
               rep: anchorNumber + (idx - normalIdx)
             }));
             
+            let addedRep = getEffectiveTile(addedTile, gameState.okeyTile).number;
+            if (isWildcard(addedTile, gameState.okeyTile)) {
+              const startNum = anchorNumber - normalIdx;
+              const endNum = startNum + targetSet.tiles.length - 1;
+              addedRep = endNum < 13 ? endNum + 1 : startNum - 1;
+            }
+
             // Yeni taşı ekleyelim
             tilesWithRep.push({
               tile: addedTile,
-              rep: getEffectiveTile(addedTile, gameState.okeyTile).number
+              rep: addedRep
             });
             
             // Sıralayalım
