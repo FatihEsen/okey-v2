@@ -224,6 +224,20 @@ const Rack: React.FC<RackProps> = ({
 
   const isDraggingSet = new Set(dragState?.tileIds ?? []);
 
+  // Boş slota tıkla-taşı: seçili tek taş varsa o slota taşı
+  const handleEmptySlotClick = useCallback(
+    (slotIdx: number) => {
+      if (disabled || selectedIds.length !== 1) return;
+      const srcIdx = hand.findIndex(t => t?.id === selectedIds[0]);
+      if (srcIdx === -1 || hand[slotIdx] !== null) return;
+      const newHand = [...hand];
+      newHand[slotIdx] = newHand[srcIdx];
+      newHand[srcIdx] = null;
+      onReorder(newHand);
+    },
+    [disabled, selectedIds, hand, onReorder]
+  );
+
   return (
     <div
       ref={containerRef}
@@ -249,6 +263,10 @@ const Rack: React.FC<RackProps> = ({
           dragState.hoveredSlot !== null &&
           Math.abs(slotIdx - dragState.hoveredSlot) < (dragState.tileIds.length);
 
+        // Boş slot + seçili tek taş var + sürükleme yok → tıklanabilir hedef
+        const isClickTarget =
+          !realTile && !disabled && selectedIds.length === 1 && !dragState?.started;
+
         return (
           <div
             key={slotIdx}
@@ -261,6 +279,8 @@ const Rack: React.FC<RackProps> = ({
                 ? "grabbing"
                 : realTile
                 ? "grab"
+                : isClickTarget
+                ? "pointer"
                 : "default",
               position: "relative",
               display: "flex",
@@ -290,15 +310,23 @@ const Rack: React.FC<RackProps> = ({
               </div>
             ) : (
               <div
+                onClick={isClickTarget ? () => handleEmptySlotClick(slotIdx) : undefined}
                 style={{
                   outline:
                     isHoveredTarget && dragState?.started
                       ? "2px dashed #3b82f6"
+                      : isClickTarget
+                      ? "2px dashed #f59e0b"
                       : "none",
                   outlineOffset: "1px",
                   borderRadius: "6px",
+                  transition: "outline 0.1s, background 0.1s",
                 }}
-                className="w-12 h-16 rounded-md border-2 border-dashed border-slate-700/50 bg-black/10"
+                className={`w-12 h-16 rounded-md border-2 border-dashed transition-colors ${
+                  isClickTarget
+                    ? "border-amber-400/60 bg-amber-400/10 hover:bg-amber-400/20"
+                    : "border-slate-700/50 bg-black/10"
+                }`}
               />
             )}
           </div>
