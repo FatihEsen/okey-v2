@@ -373,10 +373,26 @@ export const canProcessTile = (tile: Tile, set: Combination, okeyTile: { number:
     return isValidGroup([...set.tiles, tile], okeyTile);
   }
 
-  // Run: Okey varsa işleme yapılamaz (okey temsil ettiği sayı sabit kalmalı)
+  // Run: Okey varsa, temsil ettiği sayı sabit kalmalı
   const hasOkey = set.tiles.some(t => isWildcard(t, okeyTile));
   if (hasOkey) {
-    return false; // Okey varsa bu seri'ye taş işlenemez
+    const normalIdx = set.tiles.findIndex(t => !isWildcard(t, okeyTile));
+    if (normalIdx === -1) return false;
+
+    const anchorNum = getEffectiveTile(set.tiles[normalIdx], okeyTile).number;
+    const runColor = getEffectiveTile(set.tiles[normalIdx], okeyTile).color;
+    if (tile.color !== runColor) return false;
+
+    // Okeyin temsil ettiği sayı(lar) — bu sayılara taş eklenemez
+    const okeyRepNums = set.tiles
+      .map((t, idx) => isWildcard(t, okeyTile) ? anchorNum + (idx - normalIdx) : null)
+      .filter((n): n is number => n !== null);
+
+    // Eklenecek taşın sayısı okey'in temsil ettiği sayı olmamalı
+    if (okeyRepNums.includes(tile.number)) return false;
+
+    // Seri'nin uçlarından uzatılabilir
+    return isValidRun([...set.tiles, tile], okeyTile);
   }
 
   // Okey olmayan seri'ye yeni taş işlenebilir
