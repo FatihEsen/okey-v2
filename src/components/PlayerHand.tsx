@@ -315,12 +315,9 @@ const Rack: React.FC<RackProps> = ({
                   outline:
                     isHoveredTarget && dragState?.started
                       ? "2px dashed #3b82f6"
-                      : isClickTarget
-                      ? "2px dashed #f59e0b"
                       : "none",
                   outlineOffset: "1px",
                   borderRadius: "6px",
-                  transition: "outline 0.1s, background 0.1s",
                 }}
                 className="w-12 h-16 rounded-md bg-black/10 border-2 border-dashed border-slate-700/50"
               />
