@@ -404,7 +404,11 @@ export const canProcessTile = (tile: Tile, set: Combination, okeyTile: { number:
     return tile.number === maxNum + 1 && maxNum + 1 <= 13;
   }
 
-  // Okey ortada → her iki uca da eklenebilir
+  // Okey ortada → her iki uca da eklenebilir, ama okeyin temsil ettiği konuma eklenemez
+  const okeyRepNums = set.tiles
+    .map((t, idx) => isWildcard(t, okeyTile) ? anchorNum + (idx - normalIdx) : null)
+    .filter((n): n is number => n !== null);
+  if (okeyRepNums.includes(tile.number)) return false;
   return isValidRun([...set.tiles, tile], okeyTile);
 };
 
