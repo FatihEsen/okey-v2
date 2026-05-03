@@ -557,14 +557,45 @@ export const aiTakeTurn = (gameState: GameState): Partial<GameState> | null => {
           currentPlayer.hand.forEach((tile, hIdx) => {
             if (tile && canProcessTile(tile, set, gameState.okeyTile)) {
               set.tiles.push(tile);
-              // Ekleme sonrası sıralama
+              // Ekleme sonrası sıralama - okey'nin temsil ettiği sayı sabit kalmalı
               if (set.type === "run") {
                 const nIdx = set.tiles.findIndex(t => !isWildcard(t, gameState.okeyTile));
                 if (nIdx !== -1) {
                   const anchor = getEffectiveTile(set.tiles[nIdx], gameState.okeyTile).number;
-                  const withRep = set.tiles.map((t, i) => ({ tile: t, rep: anchor + (i - nIdx) }));
-                  withRep.sort((a, b) => a.rep - b.rep);
-                  set.tiles = withRep.map(x => x.tile);
+
+                  // Okey'lerin temsil ettiği sayıları beforehand sakla
+                  const okeyRepMap = new Map<string, number>();
+                  set.tiles.forEach((t, i) => {
+                    if (isWildcard(t, gameState.okeyTile)) {
+                      okeyRepMap.set(t.id, anchor + (i - nIdx));
+                    }
+                  });
+
+                  // Normal taşları ve okey'leri say ile sırala
+                  const sorted: Tile[] = [];
+                  const normal = set.tiles.filter(t => !isWildcard(t, gameState.okeyTile));
+                  const normals = normal.sort((a, b) => getEffectiveTile(a, gameState.okeyTile).number - getEffectiveTile(b, gameState.okeyTile).number);
+
+                  const minNum = Math.min(...normals.map(t => getEffectiveTile(t, gameState.okeyTile).number));
+                  const startNum = minNum - normals.findIndex(t => getEffectiveTile(t, gameState.okeyTile).number === minNum);
+
+                  // Sıralı pozisyonlara taşları yerleştir
+                  for (let i = 0; i < set.tiles.length; i++) {
+                    const expectedNum = startNum + i;
+                    // Bu sayıyı temsil eden normal taş var mı?
+                    const normalTile = normals.find(t => getEffectiveTile(t, gameState.okeyTile).number === expectedNum);
+                    if (normalTile) {
+                      sorted.push(normalTile);
+                    } else {
+                      // Bu sayıyı temsil eden okey var mı?
+                      const okeyTile = Array.from(okeyRepMap.entries()).find(([id, rep]) => rep === expectedNum)?.[0];
+                      if (okeyTile) {
+                        sorted.push(set.tiles.find(t => t.id === okeyTile)!);
+                      }
+                    }
+                  }
+
+                  set.tiles = sorted;
                 }
               } else if (set.type === "group") {
                 const colorOrder = [Color.RED, Color.YELLOW, Color.BLACK, Color.BLUE, Color.JOKER];
