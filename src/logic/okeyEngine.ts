@@ -628,18 +628,29 @@ export const aiTakeTurn = (gameState: GameState): Partial<GameState> | null => {
     };
   }
 
+  // Elde bir taşın seri/grup potansiyeli var mı?
+  const hasComboPotential = (tile: Tile, hand: (Tile | null)[]): boolean => {
+    if (isWildcard(tile, gameState.okeyTile)) return true;
+    const others = hand.filter((t): t is Tile => t !== null && t.id !== tile.id && !isWildcard(t, gameState.okeyTile));
+    // Grup potansiyeli: aynı sayı farklı renk (1 taş bile yeterli)
+    if (others.some(t => t.number === tile.number && t.color !== tile.color)) return true;
+    // Seri potansiyeli: aynı renk, ±2 mesafede en az 1 taş
+    if (others.some(t => t.color === tile.color && Math.abs(t.number - tile.number) <= 2)) return true;
+    return false;
+  };
+
   let discardIdx = -1;
   const handTiles = currentPlayer.hand.filter((t): t is Tile => t !== null);
   const safeTiles = handTiles.filter(t => !isWildcard(t, gameState.okeyTile) && !isPlayableAnywhere(t, players, gameState.okeyTile));
-  
+
   if (safeTiles.length > 0) {
-    const highestSafeTile = safeTiles.reduce((max, t) => {
-      const maxVal = max.number;
-      const tVal = t.number;
-      return tVal > maxVal ? t : max;
-    });
-    discardIdx = currentPlayer.hand.findIndex(t => t?.id === highestSafeTile.id);
+    // Potansiyelsiz (yalnız) taşlar → en küçüğünü at
+    const isolated = safeTiles.filter(t => !hasComboPotential(t, currentPlayer.hand));
+    const pool = isolated.length > 0 ? isolated : safeTiles;
+    const tileToDiscard = pool.reduce((min, t) => t.number < min.number ? t : min);
+    discardIdx = currentPlayer.hand.findIndex(t => t?.id === tileToDiscard.id);
   } else {
+    // Tüm taşlar potansiyelli veya wildcard — en küçük normal taşı at
     discardIdx = currentPlayer.hand.findIndex(t => t !== null && !isWildcard(t, gameState.okeyTile));
     if (discardIdx === -1) discardIdx = currentPlayer.hand.findIndex(t => t !== null);
   }
