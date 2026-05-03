@@ -48,13 +48,16 @@ export const isFakeOkey = (tile: Tile): boolean => {
 };
 
 export const isWildcard = (tile: Tile, okeyTile: { number: number; color: Color } | null): boolean => {
+  // Sadece gerçek okey wildcard'dır
+  // Joker (fake okey) sadece okey'nin yerini tutabilir, normal wildcard değildir
   return isRealOkey(tile, okeyTile);
 };
 
 export const isOkeyLike = isWildcard;
 
 export const getEffectiveTile = (tile: Tile, okeyTile: { number: number; color: Color } | null): { number: number, color: Color } => {
-  if (tile.color === Color.JOKER && okeyTile) {
+  // Joker, okey'nin yerini tutar - okey'nin sayı/rengi olarak davranır
+  if (isFakeOkey(tile) && okeyTile) {
     return { number: okeyTile.number, color: okeyTile.color };
   }
   return { number: tile.number, color: tile.color };
@@ -62,8 +65,9 @@ export const getEffectiveTile = (tile: Tile, okeyTile: { number: number; color: 
 
 export const getTileScore = (tile: Tile, okeyTile: { number: number; color: Color } | null): number => {
   if (isRealOkey(tile, okeyTile)) return 101;
-  const effective = getEffectiveTile(tile, okeyTile);
-  return effective.number;
+  // Joker de okey gibi 101 puan (okey'nin yerini tuttuğu için)
+  if (isFakeOkey(tile)) return 101;
+  return tile.number;
 };
 
 const getRunCandidateNumbers = (startNum: number, length: number): number[] | null => {
@@ -249,8 +253,9 @@ export const findPairs = (hand: (Tile | null)[], okeyTile: { number: number; col
   const tiles = hand.filter((t): t is Tile => t !== null);
   const pairs: Tile[][] = [];
   const usedIds = new Set<string>();
-  const normalTiles = tiles.filter(t => !isWildcard(t, okeyTile));
-  const wildcards = tiles.filter(t => isWildcard(t, okeyTile));
+  const normalTiles = tiles.filter(t => !isWildcard(t, okeyTile) && !isFakeOkey(t));
+  const realOkeys = tiles.filter(t => isRealOkey(t, okeyTile));
+  const fakeOkeys = tiles.filter(t => isFakeOkey(t));
 
   // 1) Önce normal-normal eşleşmeleri bul
   for (let i = 0; i < normalTiles.length; i++) {
@@ -268,16 +273,34 @@ export const findPairs = (hand: (Tile | null)[], okeyTile: { number: number; col
     }
   }
 
-  // 2) Akıllı okey eşleme: her okey'i, eşi olmayan farklı bir normal taşla
-  //    potansiyel çift olarak işaretle. İki okey aynı taşa eşlenmez —
-  //    doğal olarak iki ayrı çift oluşur.
+  // 2) Gerçek okey eşleme: her okey'i, eşi olmayan farklı bir normal taşla potansiyel çift olarak işaretle
   const lonelyNormals = normalTiles.filter(t => !usedIds.has(t.id));
-  for (const wc of wildcards) {
+  for (const okey of realOkeys) {
     const partner = lonelyNormals.find(t => !usedIds.has(t.id));
     if (!partner) break;
-    pairs.push([partner, wc]);
+    pairs.push([partner, okey]);
     usedIds.add(partner.id);
-    usedIds.add(wc.id);
+    usedIds.add(okey.id);
+  }
+
+  // 3) Joker eşleme: joker SADECE okey'nin eşi olan taş ile çift oluşturabilir
+  // Okey = beyaz 5 ise, joker + beyaz 5 = çift
+  if (okeyTile && fakeOkeys.length > 0) {
+    // Okey'nin eşi olan taş (aynı sayı ve renk)
+    const okeyPartner = normalTiles.find(t => {
+      const eff = getEffectiveTile(t, okeyTile);
+      return eff.number === okeyTile.number && eff.color === okeyTile.color && !usedIds.has(t.id);
+    });
+
+    // Joker'leri okey'nin eşi ile eşle
+    for (const joker of fakeOkeys) {
+      if (okeyPartner && !usedIds.has(okeyPartner.id)) {
+        pairs.push([okeyPartner, joker]);
+        usedIds.add(okeyPartner.id);
+        usedIds.add(joker.id);
+        break; // Her joker için bir eş bulabilir
+      }
+    }
   }
 
   return pairs;
@@ -375,26 +398,29 @@ export const canProcessTile = (tile: Tile, set: Combination, okeyTile: { number:
     return isValidGroup([...set.tiles, tile], okeyTile);
   }
 
-  // Run: okey uçtaysa sadece okeyin bulunduğu yönden uzatmaya izin ver
+  // Run: Okey varsa, temsil ettiği sayı sabit kalmalı
   const hasOkey = set.tiles.some(t => isWildcard(t, okeyTile));
-  if (!hasOkey) {
+  if (hasOkey) {
+    const normalIdx = set.tiles.findIndex(t => !isWildcard(t, okeyTile));
+    if (normalIdx === -1) return false;
+
+    const anchorNum = getEffectiveTile(set.tiles[normalIdx], okeyTile).number;
+    const runColor = getEffectiveTile(set.tiles[normalIdx], okeyTile).color;
+    if (tile.color !== runColor) return false;
+
+    // Okeyin temsil ettiği sayı(lar) — bu sayılara taş eklenemez
+    const okeyRepNums = set.tiles
+      .map((t, idx) => isWildcard(t, okeyTile) ? anchorNum + (idx - normalIdx) : null)
+      .filter((n): n is number => n !== null);
+
+    // Eklenecek taşın sayısı okey'in temsil ettiği sayı olmamalı
+    if (okeyRepNums.includes(tile.number)) return false;
+
+    // Seri'nin uçlarından uzatılabilir
     return isValidRun([...set.tiles, tile], okeyTile);
   }
 
-  const normalIdx = set.tiles.findIndex(t => !isWildcard(t, okeyTile));
-  if (normalIdx === -1) return false;
-
-  const anchorNum = getEffectiveTile(set.tiles[normalIdx], okeyTile).number;
-  const runColor = getEffectiveTile(set.tiles[normalIdx], okeyTile).color;
-  if (tile.color !== runColor) return false;
-
-  // Okeyin temsil ettiği tüm pozisyonlar — bu sayılara yeni taş eklenemez
-  const okeyRepNums = set.tiles
-    .map((t, idx) => isWildcard(t, okeyTile) ? anchorNum + (idx - normalIdx) : null)
-    .filter((n): n is number => n !== null);
-  if (okeyRepNums.includes(tile.number)) return false;
-
-  // Her iki uçtan da uzatılabilir; isValidRun geçerliliği doğrular
+  // Okey olmayan seri'ye yeni taş işlenebilir
   return isValidRun([...set.tiles, tile], okeyTile);
 };
 
@@ -556,14 +582,45 @@ export const aiTakeTurn = (gameState: GameState): Partial<GameState> | null => {
           currentPlayer.hand.forEach((tile, hIdx) => {
             if (tile && canProcessTile(tile, set, gameState.okeyTile)) {
               set.tiles.push(tile);
-              // Ekleme sonrası sıralama
+              // Ekleme sonrası sıralama - okey'nin temsil ettiği sayı sabit kalmalı
               if (set.type === "run") {
                 const nIdx = set.tiles.findIndex(t => !isWildcard(t, gameState.okeyTile));
                 if (nIdx !== -1) {
                   const anchor = getEffectiveTile(set.tiles[nIdx], gameState.okeyTile).number;
-                  const withRep = set.tiles.map((t, i) => ({ tile: t, rep: anchor + (i - nIdx) }));
-                  withRep.sort((a, b) => a.rep - b.rep);
-                  set.tiles = withRep.map(x => x.tile);
+
+                  // Okey'lerin temsil ettiği sayıları beforehand sakla
+                  const okeyRepMap = new Map<string, number>();
+                  set.tiles.forEach((t, i) => {
+                    if (isWildcard(t, gameState.okeyTile)) {
+                      okeyRepMap.set(t.id, anchor + (i - nIdx));
+                    }
+                  });
+
+                  // Normal taşları ve okey'leri say ile sırala
+                  const sorted: Tile[] = [];
+                  const normal = set.tiles.filter(t => !isWildcard(t, gameState.okeyTile));
+                  const normals = normal.sort((a, b) => getEffectiveTile(a, gameState.okeyTile).number - getEffectiveTile(b, gameState.okeyTile).number);
+
+                  const minNum = Math.min(...normals.map(t => getEffectiveTile(t, gameState.okeyTile).number));
+                  const startNum = minNum - normals.findIndex(t => getEffectiveTile(t, gameState.okeyTile).number === minNum);
+
+                  // Sıralı pozisyonlara taşları yerleştir
+                  for (let i = 0; i < set.tiles.length; i++) {
+                    const expectedNum = startNum + i;
+                    // Bu sayıyı temsil eden normal taş var mı?
+                    const normalTile = normals.find(t => getEffectiveTile(t, gameState.okeyTile).number === expectedNum);
+                    if (normalTile) {
+                      sorted.push(normalTile);
+                    } else {
+                      // Bu sayıyı temsil eden okey var mı?
+                      const okeyTile = Array.from(okeyRepMap.entries()).find(([id, rep]) => rep === expectedNum)?.[0];
+                      if (okeyTile) {
+                        sorted.push(set.tiles.find(t => t.id === okeyTile)!);
+                      }
+                    }
+                  }
+
+                  set.tiles = sorted;
                 }
               } else if (set.type === "group") {
                 const colorOrder = [Color.RED, Color.YELLOW, Color.BLACK, Color.BLUE, Color.JOKER];
