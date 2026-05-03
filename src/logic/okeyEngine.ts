@@ -48,22 +48,20 @@ export const isFakeOkey = (tile: Tile): boolean => {
 };
 
 export const isWildcard = (tile: Tile, okeyTile: { number: number; color: Color } | null): boolean => {
-  return isRealOkey(tile, okeyTile);
+  return isRealOkey(tile, okeyTile) || isFakeOkey(tile);
 };
 
 export const isOkeyLike = isWildcard;
 
 export const getEffectiveTile = (tile: Tile, okeyTile: { number: number; color: Color } | null): { number: number, color: Color } => {
-  if (tile.color === Color.JOKER && okeyTile) {
-    return { number: okeyTile.number, color: okeyTile.color };
-  }
+  // Joker normal taş gibi davranır (kendisi aynen kalır)
   return { number: tile.number, color: tile.color };
 };
 
 export const getTileScore = (tile: Tile, okeyTile: { number: number; color: Color } | null): number => {
   if (isRealOkey(tile, okeyTile)) return 101;
-  const effective = getEffectiveTile(tile, okeyTile);
-  return effective.number;
+  // Joker normal taş puanı (sayısı), 101 değil
+  return tile.number;
 };
 
 const getRunCandidateNumbers = (startNum: number, length: number): number[] | null => {
