@@ -373,26 +373,13 @@ export const canProcessTile = (tile: Tile, set: Combination, okeyTile: { number:
     return isValidGroup([...set.tiles, tile], okeyTile);
   }
 
-  // Run: okey uçtaysa sadece okeyin bulunduğu yönden uzatmaya izin ver
+  // Run: Okey varsa işleme yapılamaz (okey temsil ettiği sayı sabit kalmalı)
   const hasOkey = set.tiles.some(t => isWildcard(t, okeyTile));
-  if (!hasOkey) {
-    return isValidRun([...set.tiles, tile], okeyTile);
+  if (hasOkey) {
+    return false; // Okey varsa bu seri'ye taş işlenemez
   }
 
-  const normalIdx = set.tiles.findIndex(t => !isWildcard(t, okeyTile));
-  if (normalIdx === -1) return false;
-
-  const anchorNum = getEffectiveTile(set.tiles[normalIdx], okeyTile).number;
-  const runColor = getEffectiveTile(set.tiles[normalIdx], okeyTile).color;
-  if (tile.color !== runColor) return false;
-
-  // Okeyin temsil ettiği tüm pozisyonlar — bu sayılara yeni taş eklenemez
-  const okeyRepNums = set.tiles
-    .map((t, idx) => isWildcard(t, okeyTile) ? anchorNum + (idx - normalIdx) : null)
-    .filter((n): n is number => n !== null);
-  if (okeyRepNums.includes(tile.number)) return false;
-
-  // Her iki uçtan da uzatılabilir; isValidRun geçerliliği doğrular
+  // Okey olmayan seri'ye yeni taş işlenebilir
   return isValidRun([...set.tiles, tile], okeyTile);
 };
 
