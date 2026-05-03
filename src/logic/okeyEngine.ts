@@ -254,7 +254,8 @@ export const findPairs = (hand: (Tile | null)[], okeyTile: { number: number; col
   const pairs: Tile[][] = [];
   const usedIds = new Set<string>();
   const normalTiles = tiles.filter(t => !isWildcard(t, okeyTile) && !isFakeOkey(t));
-  const wildcards = tiles.filter(t => isWildcard(t, okeyTile) || isFakeOkey(t)); // Gerçek okey + joker
+  const realOkeys = tiles.filter(t => isRealOkey(t, okeyTile));
+  const fakeOkeys = tiles.filter(t => isFakeOkey(t));
 
   // 1) Önce normal-normal eşleşmeleri bul
   for (let i = 0; i < normalTiles.length; i++) {
@@ -272,15 +273,34 @@ export const findPairs = (hand: (Tile | null)[], okeyTile: { number: number; col
     }
   }
 
-  // 2) Okey/Joker eşleme: her okey/joker'i, eşi olmayan farklı bir normal taşla potansiyel çift olarak işaretle
-  // İki okey aynı taşa eşlenmez — doğal olarak iki ayrı çift oluşur
+  // 2) Gerçek okey eşleme: her okey'i, eşi olmayan farklı bir normal taşla potansiyel çift olarak işaretle
   const lonelyNormals = normalTiles.filter(t => !usedIds.has(t.id));
-  for (const wc of wildcards) {
+  for (const okey of realOkeys) {
     const partner = lonelyNormals.find(t => !usedIds.has(t.id));
     if (!partner) break;
-    pairs.push([partner, wc]);
+    pairs.push([partner, okey]);
     usedIds.add(partner.id);
-    usedIds.add(wc.id);
+    usedIds.add(okey.id);
+  }
+
+  // 3) Joker eşleme: joker SADECE okey'nin eşi olan taş ile çift oluşturabilir
+  // Okey = beyaz 5 ise, joker + beyaz 5 = çift
+  if (okeyTile && fakeOkeys.length > 0) {
+    // Okey'nin eşi olan taş (aynı sayı ve renk)
+    const okeyPartner = normalTiles.find(t => {
+      const eff = getEffectiveTile(t, okeyTile);
+      return eff.number === okeyTile.number && eff.color === okeyTile.color && !usedIds.has(t.id);
+    });
+
+    // Joker'leri okey'nin eşi ile eşle
+    for (const joker of fakeOkeys) {
+      if (okeyPartner && !usedIds.has(okeyPartner.id)) {
+        pairs.push([okeyPartner, joker]);
+        usedIds.add(okeyPartner.id);
+        usedIds.add(joker.id);
+        break; // Her joker için bir eş bulabilir
+      }
+    }
   }
 
   return pairs;
