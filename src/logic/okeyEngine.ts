@@ -56,13 +56,17 @@ export const isWildcard = (tile: Tile, okeyTile: { number: number; color: Color 
 export const isOkeyLike = isWildcard;
 
 export const getEffectiveTile = (tile: Tile, okeyTile: { number: number; color: Color } | null): { number: number, color: Color } => {
-  // Joker normal taş gibi davranır (kendisi aynen kalır)
+  // Joker, okey'nin yerini tutar - okey'nin sayı/rengi olarak davranır
+  if (isFakeOkey(tile) && okeyTile) {
+    return { number: okeyTile.number, color: okeyTile.color };
+  }
   return { number: tile.number, color: tile.color };
 };
 
 export const getTileScore = (tile: Tile, okeyTile: { number: number; color: Color } | null): number => {
   if (isRealOkey(tile, okeyTile)) return 101;
-  // Joker normal taş puanı (sayısı), 101 değil
+  // Joker de okey gibi 101 puan (okey'nin yerini tuttuğu için)
+  if (isFakeOkey(tile)) return 101;
   return tile.number;
 };
 
@@ -249,29 +253,28 @@ export const findPairs = (hand: (Tile | null)[], okeyTile: { number: number; col
   const tiles = hand.filter((t): t is Tile => t !== null);
   const pairs: Tile[][] = [];
   const usedIds = new Set<string>();
-  // Joker hariç tüm taşları kontrol et (joker sadece okey yerini tutabilir, çift oluşturamaz)
-  const allTiles = tiles.filter(t => !isFakeOkey(t));
-  const wildcards = allTiles.filter(t => isWildcard(t, okeyTile)); // Sadece gerçek okey
+  const normalTiles = tiles.filter(t => !isWildcard(t, okeyTile) && !isFakeOkey(t));
+  const wildcards = tiles.filter(t => isWildcard(t, okeyTile) || isFakeOkey(t)); // Gerçek okey + joker
 
   // 1) Önce normal-normal eşleşmeleri bul
-  for (let i = 0; i < allTiles.length; i++) {
-    if (usedIds.has(allTiles[i].id) || isWildcard(allTiles[i], okeyTile)) continue;
-    for (let j = i + 1; j < allTiles.length; j++) {
-      if (usedIds.has(allTiles[j].id) || isWildcard(allTiles[j], okeyTile)) continue;
-      const t1 = getEffectiveTile(allTiles[i], okeyTile);
-      const t2 = getEffectiveTile(allTiles[j], okeyTile);
+  for (let i = 0; i < normalTiles.length; i++) {
+    if (usedIds.has(normalTiles[i].id)) continue;
+    for (let j = i + 1; j < normalTiles.length; j++) {
+      if (usedIds.has(normalTiles[j].id)) continue;
+      const t1 = getEffectiveTile(normalTiles[i], okeyTile);
+      const t2 = getEffectiveTile(normalTiles[j], okeyTile);
       if (t1.number === t2.number && t1.color === t2.color) {
-        pairs.push([allTiles[i], allTiles[j]]);
-        usedIds.add(allTiles[i].id);
-        usedIds.add(allTiles[j].id);
+        pairs.push([normalTiles[i], normalTiles[j]]);
+        usedIds.add(normalTiles[i].id);
+        usedIds.add(normalTiles[j].id);
         break;
       }
     }
   }
 
-  // 2) Okey eşleme: her okey'i, eşi olmayan farklı bir normal taşla potansiyel çift olarak işaretle
+  // 2) Okey/Joker eşleme: her okey/joker'i, eşi olmayan farklı bir normal taşla potansiyel çift olarak işaretle
   // İki okey aynı taşa eşlenmez — doğal olarak iki ayrı çift oluşur
-  const lonelyNormals = allTiles.filter(t => !usedIds.has(t.id) && !isWildcard(t, okeyTile));
+  const lonelyNormals = normalTiles.filter(t => !usedIds.has(t.id));
   for (const wc of wildcards) {
     const partner = lonelyNormals.find(t => !usedIds.has(t.id));
     if (!partner) break;
