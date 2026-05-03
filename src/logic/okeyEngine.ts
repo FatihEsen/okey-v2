@@ -388,27 +388,13 @@ export const canProcessTile = (tile: Tile, set: Combination, okeyTile: { number:
   const runColor = getEffectiveTile(set.tiles[normalIdx], okeyTile).color;
   if (tile.color !== runColor) return false;
 
-  const representedNums = set.tiles.map((t, idx) => anchorNum + (idx - normalIdx));
-  const minNum = Math.min(...representedNums);
-  const maxNum = Math.max(...representedNums);
-
-  const okeyIdx = set.tiles.findIndex(t => isWildcard(t, okeyTile));
-  const okeyRepNum = anchorNum + (okeyIdx - normalIdx);
-
-  if (okeyRepNum === minNum) {
-    // Okey sol uçta → sadece sol tarafa (minNum - 1) uzatılabilir
-    return tile.number === minNum - 1 && minNum - 1 >= 1;
-  }
-  if (okeyRepNum === maxNum) {
-    // Okey sağ uçta → sadece sağ tarafa (maxNum + 1) uzatılabilir
-    return tile.number === maxNum + 1 && maxNum + 1 <= 13;
-  }
-
-  // Okey ortada → her iki uca da eklenebilir, ama okeyin temsil ettiği konuma eklenemez
+  // Okeyin temsil ettiği tüm pozisyonlar — bu sayılara yeni taş eklenemez
   const okeyRepNums = set.tiles
     .map((t, idx) => isWildcard(t, okeyTile) ? anchorNum + (idx - normalIdx) : null)
     .filter((n): n is number => n !== null);
   if (okeyRepNums.includes(tile.number)) return false;
+
+  // Her iki uçtan da uzatılabilir; isValidRun geçerliliği doğrular
   return isValidRun([...set.tiles, tile], okeyTile);
 };
 
