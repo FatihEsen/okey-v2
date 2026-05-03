@@ -322,9 +322,7 @@ const Rack: React.FC<RackProps> = ({
                   borderRadius: "6px",
                   transition: "outline 0.1s, background 0.1s",
                 }}
-                className={`w-12 h-16 rounded-md bg-black/10 border-2 border-dashed transition-colors ${
-                  isClickTarget ? "border-amber-400/70" : "border-slate-700/50"
-                }`}
+                className="w-12 h-16 rounded-md bg-black/10 border-2 border-dashed border-slate-700/50"
               />
             )}
           </div>
