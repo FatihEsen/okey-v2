@@ -89,6 +89,7 @@ export interface GameState {
   noOneOpened: boolean; // Kimse açmadan el bittiyse
   roundNumber: number; // Kaçıncı el
   cumulativeScores: { [playerId: string]: number }; // Kümülatif skor
+  turnSnapshot?: string | null; // Tur başındaki (taş çektikten hemen sonraki) state yedeği
 }
 
 export type GameAction =

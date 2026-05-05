@@ -11,6 +11,8 @@ import {
   Layers,
   Moon,
   Sun,
+  BookOpen,
+  X,
 } from "lucide-react";
 import {
   DndContext,
@@ -105,6 +107,7 @@ export default function App() {
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [selectedTiles, setSelectedTiles] = useState<string[]>([]);
   const [showSettings, setShowSettings] = useState(false);
+  const [showRules, setShowRules] = useState(false);
   const [gameMode, setGameMode] = useState<GameMode>(GameMode.STANDARD);
   const [totalRounds, setTotalRounds] = useState<number>(1);
   const [showRoundPicker, setShowRoundPicker] = useState(false);
@@ -469,13 +472,15 @@ export default function App() {
       else player.hand.push(drawn);
     }
 
-    setGameState({
+    const newState = {
       ...gameState,
       deck: newDeck,
       players: newPlayers,
       phase: GamePhase.PLAYING,
       logs: [...gameState.logs, `${player.name} desteden çekti.`]
-    });
+    };
+    newState.turnSnapshot = JSON.stringify({ ...newState, turnSnapshot: null });
+    setGameState(newState);
   };
 
   const drawFromDiscard = () => {
@@ -503,13 +508,15 @@ export default function App() {
       else player.hand.push(drawn);
     }
 
-    setGameState({
+    const newState = {
       ...gameState,
       discardPile: newDiscard,
       players: newPlayers,
       phase: GamePhase.PLAYING,
       logs: [...gameState.logs, `${player.name} yerden aldı. (Açmak zorunda)`]
-    });
+    };
+    newState.turnSnapshot = JSON.stringify({ ...newState, turnSnapshot: null });
+    setGameState(newState);
   };
 
   const discardTile = (tileToDiscard?: Tile) => {
@@ -712,20 +719,7 @@ export default function App() {
 
       const remainingScore = calculateHandTotal(p.hand, gameState.okeyTile);
 
-      // Yerden alınan taşla el açıldıysa, o taşı atan oyuncuya 101 ceza
       const openLogs: string[] = [`${p.name} elini açtı. Kalan puan: ${remainingScore}`];
-      if (player.drawnFromDiscardTile) {
-        const discarderIdx = gameState.players.findIndex(
-          op => op.lastDiscardedTile?.id === player.drawnFromDiscardTile!.id
-        );
-        if (discarderIdx !== -1 && discarderIdx !== gameState.currentPlayerIndex) {
-          newPlayers[discarderIdx] = {
-            ...newPlayers[discarderIdx],
-            score: newPlayers[discarderIdx].score + 101
-          };
-          openLogs.push(`${newPlayers[discarderIdx].name} attığı taş alınıp açıldığı için 101 ceza aldı!`);
-        }
-      }
 
       setGameState({
         ...gameState,
@@ -846,72 +840,32 @@ export default function App() {
     });
   };
 
-  // Geri alma: Sadece BU SIRADA açılan taşları geri al.
-  // - İlk açma sırasında: tüm açılanlar bu sıraya ait → hepsi geri gelir.
-  // - Sonraki sıralarda: yalnızca o sırada eklenen yeni set/çiftler geri alınır.
+  // Geri alma: Turun başındaki (taş çektikten sonraki) duruma tamamen geri döner.
+  // Bu sayede işlenen taşlar, alınan okeyler ve açılan tüm perler geri alınır.
   const undoAllOpens = () => {
     if (!gameState || gameState.phase !== GamePhase.PLAYING) return;
     const player = gameState.players[gameState.currentPlayerIndex];
-    if (!player.hasOpened) return;
-
-    const turnIds = new Set(player.currentTurnOpenedTileIds);
-    if (turnIds.size === 0) {
-      showToast("Bu sırada geri alınacak bir açma yok.", "info");
+    
+    if (!gameState.turnSnapshot) {
+      showToast("Bu sırada geri alınacak bir işlem yok.", "info");
       return;
     }
 
-    const newPlayers = gameState.players.map(p => ({
-      ...p,
-      hand: [...p.hand],
-      openedSets: p.openedSets.map(s => ({ ...s, tiles: [...s.tiles] })),
-      openedPairs: p.openedPairs.map(pr => [...pr])
-    }));
-    const p = newPlayers[gameState.currentPlayerIndex];
-
-    const returnTile = (t: Tile) => {
-      const nullIdx = p.hand.indexOf(null);
-      if (nullIdx !== -1) p.hand[nullIdx] = t;
-      else p.hand.push(t);
-    };
-
-    // Sadece bu sıraya ait set'leri geri al (set'in en az bir taşı turnIds'de ise tümü geri gider)
-    const remainingSets: typeof p.openedSets = [];
-    p.openedSets.forEach(set => {
-      const isThisTurn = set.tiles.some(t => turnIds.has(t.id));
-      if (isThisTurn) {
-        set.tiles.forEach(returnTile);
-      } else {
-        remainingSets.push(set);
-      }
-    });
-    p.openedSets = remainingSets;
-
-    // Sadece bu sıraya ait çiftleri geri al
-    const remainingPairs: typeof p.openedPairs = [];
-    p.openedPairs.forEach(pair => {
-      const isThisTurn = pair.some(t => turnIds.has(t.id));
-      if (isThisTurn) {
-        pair.forEach(returnTile);
-      } else {
-        remainingPairs.push(pair);
-      }
-    });
-    p.openedPairs = remainingPairs;
-
-    // Eğer hiçbir açık per/çift kalmadıysa hasOpened sıfırla
-    if (p.openedSets.length === 0 && p.openedPairs.length === 0) {
-      p.hasOpened = false;
-      p.openedWithPairs = false;
+    const restoredState: GameState = JSON.parse(gameState.turnSnapshot);
+    
+    restoredState.logs = [...gameState.logs, `${player.name} bu turdaki tüm işlemlerini geri aldı.`];
+    
+    // Eğer oyuncu bu tur içinde elini İLK DEFA açtıysa, canUndoOpen değerini true yapıyoruz ki 
+    // tekrar açmadan taş atarsa 101 ceza yiyebilsin.
+    if (player.openedThisTurn) {
+      restoredState.players[gameState.currentPlayerIndex].canUndoOpen = true;
     }
 
-    p.currentTurnOpenedTileIds = [];
-    p.canUndoOpen = true;
+    // Snapshot restore edildikten sonra tekrar geri alınabilmesi için snapshot'ı koruyoruz
+    restoredState.turnSnapshot = gameState.turnSnapshot;
 
-    setGameState({
-      ...gameState,
-      players: newPlayers,
-      logs: [...gameState.logs, `${p.name} bu sırada açtıklarını geri aldı.`]
-    });
+    setGameState(restoredState);
+    setSelectedTiles([]);
   };
 
   const tryToOpenPairs = () => {
@@ -1369,6 +1323,12 @@ export default function App() {
                 <Play size={16} /> Yeni Oyun
               </button>
               <button 
+                onClick={() => setShowRules(true)}
+                className="flex items-center gap-1 px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors text-sm font-bold"
+              >
+                <BookOpen size={16} /> Kurallar
+              </button>
+              <button 
                 onClick={() => setShowSettings(true)}
                 className="flex items-center gap-1 px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors text-sm font-bold"
               >
@@ -1381,23 +1341,23 @@ export default function App() {
 
       <main className="max-w-7xl mx-auto p-4 flex flex-col gap-4">
         
-        {/* Satır 1: Seriler ve Çiftler (Yükseklikleri senkronize olacak) */}
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 items-stretch">
-          {/* Board Area (Seri 1 ve Seri 2) */}
-          <div className="lg:col-span-3 h-full">
-            <Board gameState={gameState} onSetClick={processTile} />
-          </div>
-          {/* Çiftler */}
-          <div className="lg:col-span-1 h-full">
-            <PairsBoard gameState={gameState} onSetClick={processTile} />
-          </div>
-        </div>
-
-        {/* Satır 2: Kontroller, Istaka ve Oyun Akışı */}
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 items-stretch">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 items-start">
           
-          {/* Sol Kolon: Kontroller ve Istaka */}
+          {/* Sol ve Orta Kolon: Oyun Alanı */}
           <div className="lg:col-span-3 flex flex-col gap-4">
+            
+            {/* Üst Kısım: Seriler ve Çiftler */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-stretch">
+              <div className="lg:col-span-2 h-full">
+                <Board gameState={gameState} onSetClick={processTile} />
+              </div>
+              <div className="lg:col-span-1 h-full">
+                <PairsBoard gameState={gameState} onSetClick={processTile} />
+              </div>
+            </div>
+
+            {/* Alt Kısım: Kontroller ve Istaka */}
+            <div className="flex flex-col gap-4">
             {/* Horizontal Controls Bar (Bana Atılan, Deste vs) */}
             <div className={`rounded-xl p-2 shadow-sm border flex items-center justify-between gap-3 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
               <div className="flex items-center gap-2">
@@ -1495,32 +1455,11 @@ export default function App() {
               />
             </div>
           </div>
+          </div>
 
           {/* Sağ Kolon: Oyun Akışı */}
           <div className="lg:col-span-1 flex flex-col h-full">
             <div className={`rounded-2xl p-4 shadow-sm border flex flex-col h-full ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}>
-              <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
-                <ChevronRight size={14} /> OYUN AKIŞI
-              </h3>
-              <div className="flex-1 overflow-y-auto space-y-1.5 pr-2 custom-scrollbar max-h-[150px] mb-4">
-                {gameState.logs.slice().reverse().map((log, i) => {
-                  const isPenalty = log.includes("ceza") || log.includes("Ceza");
-                  return (
-                    <div key={i} className={`text-[10px] p-1.5 rounded-lg ${
-                      i === 0 
-                        ? (isPenalty 
-                          ? "bg-red-900/30 text-red-400 font-bold" 
-                          : (isDarkMode ? "bg-blue-900/30 text-blue-400 font-bold" : "bg-blue-50 text-blue-700 font-bold"))
-                        : (isPenalty ? "text-red-500" : "text-slate-500")
-                    }`}>
-                      {log}
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className={`w-full h-px mb-4 ${isDarkMode ? "bg-slate-800" : "bg-slate-100"}`} />
-
               <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
                 <Trophy size={14} className="text-yellow-500" /> ANLIK CEZA PUANLARI
               </h3>
@@ -1550,6 +1489,28 @@ export default function App() {
                     </div>
                   </div>
                 ))}
+              </div>
+
+              <div className={`w-full h-px mb-4 ${isDarkMode ? "bg-slate-800" : "bg-slate-100"}`} />
+
+              <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                <ChevronRight size={14} /> OYUN AKIŞI
+              </h3>
+              <div className="flex-1 overflow-y-auto space-y-1.5 pr-2 custom-scrollbar min-h-[150px] mb-4">
+                {gameState.logs.slice().reverse().map((log, i) => {
+                  const isPenalty = log.includes("ceza") || log.includes("Ceza");
+                  return (
+                    <div key={i} className={`text-[10px] p-1.5 rounded-lg ${
+                      i === 0 
+                        ? (isPenalty 
+                          ? "bg-red-900/30 text-red-400 font-bold" 
+                          : (isDarkMode ? "bg-blue-900/30 text-blue-400 font-bold" : "bg-blue-50 text-blue-700 font-bold"))
+                        : (isPenalty ? "text-red-500" : "text-slate-500")
+                    }`}>
+                      {log}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -1711,6 +1672,89 @@ export default function App() {
                 >
                   Yeni Oyun
                 </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Rules Modal */}
+      <AnimatePresence>
+        {showRules && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowRules(false)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 20 }}
+              className={`relative w-full max-w-4xl max-h-[90vh] overflow-hidden rounded-3xl shadow-2xl flex flex-col ${isDarkMode ? "bg-slate-900 text-slate-200" : "bg-white text-slate-800"}`}
+            >
+              <div className={`p-4 border-b flex justify-between items-center z-10 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
+                <h2 className="text-xl font-bold flex items-center gap-2">
+                  <BookOpen className="text-blue-500" />
+                  101 Okey Kuralları
+                </h2>
+                <button onClick={() => setShowRules(false)} className={`p-2 rounded-lg transition-colors ${isDarkMode ? "hover:bg-slate-800 text-slate-400" : "hover:bg-slate-100 text-slate-500"}`}>
+                  <X size={20} />
+                </button>
+              </div>
+              
+              <div className="p-6 space-y-6 text-sm leading-relaxed overflow-y-auto custom-scrollbar">
+                <section>
+                  <h3 className="text-lg font-bold mb-2 text-blue-500">1. Ekipman ve Başlangıç</h3>
+                  <ul className="list-disc pl-5 space-y-1">
+                    <li>Toplam 106 taş (1-13 arası 4 farklı renk, her taştan 2 adet) ve 2 adet sahte okey bulunur.</li>
+                    <li>Oyun saat yönünün tersine oynanır. Dağıtanın sağındaki oyuncu 22 taş, diğerleri 21 taş alır.</li>
+                    <li><strong>Okey (Joker):</strong> Yere açılan gösterge taşının aynı renginin bir üst değeridir (örn. Mavi 13 açılırsa Okey Mavi 1'dir). Sahte Okey (Joker taşı), gerçek Okey'in yerini tutar.</li>
+                  </ul>
+                </section>
+
+                <section>
+                  <h3 className="text-lg font-bold mb-2 text-blue-500">2. Perler (Melds)</h3>
+                  <ul className="list-disc pl-5 space-y-1">
+                    <li><strong>Grup (Set / Per):</strong> Aynı rakam, farklı renklerden oluşan 3'lü veya 4'lü gruplar.</li>
+                    <li><strong>Seri (Run / El):</strong> Aynı renk, ardışık sayılardan oluşan en az 3'lü diziler. '1' taşı sadece en düşük olarak kullanılabilir (1-2-3 olur, 12-13-1 olmaz).</li>
+                    <li><strong>Çift (Pair):</strong> Tamamen aynı iki taş (aynı sayı ve aynı renk). Çiftler sonradan uzatılamaz.</li>
+                    <li><strong>Okey Kullanımı:</strong> Okey taşı her taşın yerine kullanılabilir. Yere açılan okey sabit kalır, yeri değiştirilemez. İsteyen elindeki doğru taşla yerdeki okeyi değiştirebilir (swap).</li>
+                  </ul>
+                </section>
+
+                <section>
+                  <h3 className="text-lg font-bold mb-2 text-blue-500">3. El Açma Kuralları</h3>
+                  <ul className="list-disc pl-5 space-y-1">
+                    <li><strong>Seri/Per Yoluyla:</strong> İlk açılışta perlerin sayı değerleri toplamı minimum <strong>101 puan</strong> olmalıdır.</li>
+                    <li><strong>Çift Yoluyla:</strong> En az <strong>5 çift</strong> açarak elinizi açabilirsiniz. Seri ile çift aynı anda açılamaz.</li>
+                    <li>Kendi elinizi açmadan, başkasının açtığı perlere taş <strong>işleyemezsiniz</strong> (lay-off).</li>
+                  </ul>
+                </section>
+
+                <section>
+                  <h3 className="text-lg font-bold mb-2 text-blue-500">4. Ceza Puanları</h3>
+                  <ul className="list-disc pl-5 space-y-1">
+                    <li><strong>İşlek Taş Cezası (101):</strong> Yerde açılmış herhangi bir pere eklenebilecek (işleyen) bir taşı atarsanız +101 ceza yersiniz (buna elinizi henüz açmamış olduğunuz durumlar da dahildir).</li>
+                    <li><strong>Okey Atma (101):</strong> Yere bilerek veya yanlışlıkla Okey atarsanız +101 ceza yersiniz.</li>
+                    <li>Yerden çekilen taş ile el açılması, taşı atan kişiye ceza kazandırmaz.</li>
+                    <li>Elden bitirme tespiti sistem tarafından yapılır. Elinizi açıp taşları tamamen bitirdiğiniz tur, o oyun için İLK defa el açtığınız tursa elden bitmiş sayılırsınız.</li>
+                  </ul>
+                </section>
+
+                <section>
+                  <h3 className="text-lg font-bold mb-2 text-blue-500">5. Bitiş ve Puanlama</h3>
+                  <ul className="list-disc pl-5 space-y-1">
+                    <li><strong>Normal Bitiş:</strong> Biten kişi -101 puan kazanır.</li>
+                    <li><strong>Okey ile Bitiş:</strong> Son taşı Okey olarak atıp biterse -202 puan alır. (Diğerlerine ×2 ceza)</li>
+                    <li><strong>Elden Bitiş:</strong> İlk açılışı yaptığı turda tüm taşlarını bitirirse -202 puan alır. (Diğerlerine ×2 ceza)</li>
+                    <li><strong>Elden + Okey ile Bitiş:</strong> -404 puan alır. (Diğerlerine ×4 ceza)</li>
+                    <li><strong>Diğer Oyuncular:</strong> Kalan taşlarının değerleri toplamı kadar ceza puanı yerler. Elindeki Okey taşı 101 puan ceza sayılır.</li>
+                    <li><strong>Açmamış Oyuncular:</strong> Standart 202 ceza puanı yerler (çarpanlara göre katlanabilir).</li>
+                  </ul>
+                </section>
               </div>
             </motion.div>
           </div>

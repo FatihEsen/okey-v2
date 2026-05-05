@@ -80,8 +80,8 @@ export const calculateDiscardPenalty = (tile: Tile, gameState: GameState, player
   }
 
   if (isRealOkey(tile, gameState.okeyTile)) {
-    penalty += 202;
-    const okeyReason = `${player.name} OKEY attığı için 202 ceza aldı!`;
+    penalty += 101;
+    const okeyReason = `${player.name} OKEY attığı için 101 ceza aldı!`;
     reason = reason ? `${reason}\n${okeyReason}` : okeyReason;
   }
 

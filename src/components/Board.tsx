@@ -62,71 +62,39 @@ export const Board = ({
   onSetClick: (playerId: string, setIdx: number, type: "set" | "pair") => void;
 }) => {
   return (
-    <div className="flex gap-3 w-full h-full">
-      {/* Seri 1 */}
-      <div className="flex-1 bg-emerald-500/20 dark:bg-emerald-500/10 rounded-xl border-2 border-emerald-500/30 p-3 min-h-[180px] h-full overflow-y-auto custom-scrollbar">
-        <div className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider mb-2 text-center">
-          SERİ 1
-        </div>
-        <div className="flex flex-col gap-2">
-          {gameState.players
-            .filter((p) => p.openedSets.length > 0)
-            .map((player) => (
-              <div key={player.id} className="flex flex-col gap-1">
-                <div className="text-[8px] font-bold text-slate-400 uppercase">
-                  {player.name}
-                </div>
-                <div className="flex flex-wrap gap-1">
-                  {player.openedSets
-                    .slice(0, Math.ceil(player.openedSets.length / 2))
-                    .map((s, i) => (
-                      <DroppableSet
-                        key={`set1-${player.id}-${i}`}
-                        playerId={player.id}
-                        setIdx={i}
-                        type="set"
-                        tiles={s.tiles}
-                        onSetClick={onSetClick}
-                      />
-                    ))}
-                </div>
-              </div>
-            ))}
-        </div>
+    <div className="w-full h-full bg-emerald-500/20 dark:bg-emerald-500/10 rounded-xl border-2 border-emerald-500/30 p-3 min-h-[180px] overflow-y-auto custom-scrollbar">
+      <div className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider mb-2 text-center">
+        SERİLER
       </div>
-
-      {/* Seri 2 */}
-      <div className="flex-1 bg-emerald-500/20 dark:bg-emerald-500/10 rounded-xl border-2 border-emerald-500/30 p-3 min-h-[180px] h-full overflow-y-auto custom-scrollbar">
-        <div className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider mb-2 text-center">
-          SERİ 2
-        </div>
-        <div className="flex flex-col gap-2">
-          {gameState.players
-            .filter((p) => p.openedSets.length > 0)
-            .map((player) => (
-              <div key={player.id} className="flex flex-col gap-1">
-                <div className="text-[8px] font-bold text-slate-400 uppercase">
-                  {player.name}
-                </div>
-                <div className="flex flex-wrap gap-1">
-                  {player.openedSets
-                    .slice(Math.ceil(player.openedSets.length / 2))
-                    .map((s, i) => (
-                      <DroppableSet
-                        key={`set2-${player.id}-${i}`}
-                        playerId={player.id}
-                        setIdx={Math.ceil(player.openedSets.length / 2) + i}
-                        type="set"
-                        tiles={s.tiles}
-                        onSetClick={onSetClick}
-                      />
-                    ))}
-                </div>
+      <div className="flex flex-col gap-2">
+        {gameState.players
+          .filter((p) => p.openedSets.length > 0)
+          .map((player) => (
+            <div key={player.id} className="flex flex-col gap-1">
+              <div className="text-[8px] font-bold text-slate-400 uppercase">
+                {player.name}
               </div>
-            ))}
-        </div>
+              <div className="flex flex-wrap gap-1">
+                {player.openedSets
+                  .map((s, i) => (
+                    <DroppableSet
+                      key={`set-${player.id}-${i}`}
+                      playerId={player.id}
+                      setIdx={i}
+                      type="set"
+                      tiles={s.tiles}
+                      onSetClick={onSetClick}
+                    />
+                  ))}
+              </div>
+            </div>
+          ))}
+        {gameState.players.every((p) => p.openedSets.length === 0) && (
+          <div className="text-slate-600 text-xs text-center py-8">
+            Henüz seri açılmadı
+          </div>
+        )}
       </div>
-
     </div>
   );
 };
