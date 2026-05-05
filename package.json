@@ -9,7 +9,8 @@
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "start:server": "cd server && npx tsx index.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -23,7 +24,8 @@
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "socket.io-client": "^4.8.3"
   },
   "devDependencies": {
     "@lovable.dev/vite-tanstack-config": "^1.4.0",
