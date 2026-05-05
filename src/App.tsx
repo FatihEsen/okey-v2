@@ -13,7 +13,11 @@ import {
   Sun,
   BookOpen,
   X,
+  Users,
+  Wifi,
+  UserPlus
 } from "lucide-react";
+import { io, Socket } from "socket.io-client";
 import {
   DndContext,
   DragOverlay,
@@ -112,6 +116,28 @@ export default function App() {
   const [totalRounds, setTotalRounds] = useState<number>(1);
   const [showRoundPicker, setShowRoundPicker] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: "error" | "warning" | "info" } | null>(null);
+  
+  // Multiplayer states
+  const [lobbyMode, setLobbyMode] = useState<"menu" | "offline" | "online" | "room">("menu");
+  const [playerName, setPlayerName] = useState<string>("Oyuncu" + Math.floor(Math.random() * 1000));
+  const [roomId, setRoomId] = useState<string>("");
+  const [roomPlayers, setRoomPlayers] = useState<any[]>([]);
+  const [socket, setSocket] = useState<Socket | null>(null);
+  const socketRef = React.useRef<Socket | null>(null);
+  const [myPlayerIndex, setMyPlayerIndex] = useState<number>(0);
+  const isOnlineGame = !!socket && lobbyMode === "room" && !!gameState;
+
+  const updateGameState = useCallback((newState: React.SetStateAction<GameState | null>) => {
+    setGameState((prev) => {
+      const computedState = typeof newState === 'function' ? (newState as any)(prev) : newState;
+      if (computedState && socketRef.current && roomId) {
+         socketRef.current.emit('gameAction', { roomId, action: { type: 'SYNC_STATE', newState: computedState } });
+      }
+      return computedState;
+    });
+  }, [roomId]);
+
+
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
     if (typeof window !== "undefined") {
       const savedTheme = localStorage.getItem("theme");
@@ -137,12 +163,12 @@ export default function App() {
   );
 
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
-  
+
   const activeDragTile = useMemo(() => {
     if (!activeDragId || !gameState) return null;
     
     // Check in player hand
-    const handTile = gameState.players[0].hand.find(t => t?.id === activeDragId);
+    const handTile = gameState.players[myPlayerIndex].hand.find(t => t?.id === activeDragId);
     if (handTile) return handTile;
 
     // Check if it's the discard tile
@@ -179,7 +205,7 @@ export default function App() {
 
     // --- NEW: Discard (from Hand to Discard Pile) ---
     if (overId === "discard-drop-zone") {
-      const tile = gameState.players[0].hand.find(t => t?.id === activeId);
+      const tile = gameState.players[myPlayerIndex].hand.find(t => t?.id === activeId);
       if (tile) {
         setSelectedTiles([tile.id]);
         setTimeout(() => discardTile(), 0);
@@ -190,7 +216,7 @@ export default function App() {
     // --- NEW: Set Drop Logic (Process Tile / Swap Okey) ---
     if (overId.startsWith("drop-set-")) {
       const data = over.data.current as { playerId: string, setIdx: number, type: "set" | "pair" };
-      const tile = gameState.players[0].hand.find(t => t?.id === activeId);
+      const tile = gameState.players[myPlayerIndex].hand.find(t => t?.id === activeId);
       
       if (tile && data) {
         setSelectedTiles([tile.id]);
@@ -201,7 +227,7 @@ export default function App() {
       return;
     }
 
-    const player = gameState.players[0];
+    const player = gameState.players[myPlayerIndex];
     const items = player.hand.map((tile, index) => ({
       id: tile ? tile.id : `empty-${index}`,
       tile
@@ -228,15 +254,15 @@ export default function App() {
       while (finalHand.length < player.hand.length) finalHand.push(null);
       if (finalHand.length > player.hand.length) finalHand.splice(player.hand.length);
 
-      const newPlayers = gameState.players.map((p, i) => i === 0 ? { ...p, hand: finalHand } : p);
-      setGameState({ ...gameState, players: newPlayers });
+      const newPlayers = gameState.players.map((p, i) => i === myPlayerIndex ? { ...p, hand: finalHand } : p);
+      updateGameState({ ...gameState, players: newPlayers });
       return;
     }
 
     // Single tile move
     const newHand = arrayMove(player.hand, oldIndex, newIndex);
-    const newPlayers = gameState.players.map((p, i) => i === 0 ? { ...p, hand: newHand } : p);
-    setGameState({ ...gameState, players: newPlayers });
+    const newPlayers = gameState.players.map((p, i) => i === myPlayerIndex ? { ...p, hand: newHand } : p);
+    updateGameState({ ...gameState, players: newPlayers });
   };
 
   useEffect(() => {
@@ -266,7 +292,7 @@ export default function App() {
         return playerNeedsFix ? { ...p, hand: newHand } : p;
       });
       if (needsFix) {
-        setGameState({ ...gameState, players: newPlayers });
+        updateGameState({ ...gameState, players: newPlayers });
       }
     }
   }, [gameState]);
@@ -293,7 +319,7 @@ export default function App() {
     players[2].hand = [...deck.splice(0, 21), ...Array(9).fill(null)];
     players[3].hand = [...deck.splice(0, 21), ...Array(9).fill(null)];
 
-    setGameState({
+    updateGameState({
       mode: gameMode,
       players,
       currentPlayerIndex: 0,
@@ -370,7 +396,7 @@ export default function App() {
       }
     }
 
-    setGameState({
+    updateGameState({
       mode: gameState.mode,
       players,
       currentPlayerIndex: nextFirstPlayer,
@@ -396,22 +422,22 @@ export default function App() {
     setSelectedTiles([]);
   }, [gameState]);
 
-  useEffect(() => {
-    if (!gameState) initGame();
-  }, [gameState, initGame]);
 
-  // AI Turn Effect
+  // AI Turn Effect — suppressed in online multiplayer mode
   useEffect(() => {
-    if (gameState && gameState.players[gameState.currentPlayerIndex].isAI && gameState.phase !== GamePhase.FINISHED) {
+    const isAITurn = gameState && gameState.players[gameState.currentPlayerIndex].isAI && gameState.phase !== GamePhase.FINISHED;
+    // In online game, only the host (seat 0) runs AI turns to avoid race conditions
+    const shouldRunAI = isAITurn && (!isOnlineGame || myPlayerIndex === 0);
+    if (shouldRunAI) {
       const timer = setTimeout(() => {
-        const update = aiTakeTurn(gameState);
+        const update = aiTakeTurn(gameState!);
         if (update) {
-          setGameState(prev => prev ? { ...prev, ...update } : null);
+          updateGameState(prev => prev ? { ...prev, ...update } : null);
         }
       }, 1500);
       return () => clearTimeout(timer);
     }
-  }, [gameState]);
+  }, [gameState, isOnlineGame, myPlayerIndex]);
 
   const handleTileClick = (tile: Tile) => {
     if (gameState?.phase === GamePhase.PLAYING || gameState?.phase === GamePhase.DISCARDING) {
@@ -424,27 +450,27 @@ export default function App() {
   const autoSortSets = () => {
     if (!gameState) return;
     const newPlayers = [...gameState.players];
-    newPlayers[0].hand = sortBySets(newPlayers[0].hand, gameState.okeyTile);
-    setGameState({ ...gameState, players: newPlayers });
+    newPlayers[myPlayerIndex].hand = sortBySets(newPlayers[myPlayerIndex].hand, gameState.okeyTile);
+    updateGameState({ ...gameState, players: newPlayers });
     setSelectedTiles([]);
   };
 
   const autoSortPairs = () => {
     if (!gameState) return;
     const newPlayers = [...gameState.players];
-    newPlayers[0].hand = sortByPairs(newPlayers[0].hand, gameState.okeyTile);
-    setGameState({ ...gameState, players: newPlayers });
+    newPlayers[myPlayerIndex].hand = sortByPairs(newPlayers[myPlayerIndex].hand, gameState.okeyTile);
+    updateGameState({ ...gameState, players: newPlayers });
     setSelectedTiles([]);
   };
 
   const drawFromDeck = () => {
-    if (!gameState || gameState.phase !== GamePhase.DRAWING || gameState.players[gameState.currentPlayerIndex].isAI) return;
+    if (!gameState || gameState.phase !== GamePhase.DRAWING || gameState.currentPlayerIndex !== myPlayerIndex) return;
 
     const newDeck = [...gameState.deck];
     const drawn = newDeck.pop();
     if (!drawn) {
       const hasAnyOpened = gameState.players.some(p => p.hasOpened);
-      setGameState({
+      updateGameState({
         ...gameState,
         phase: GamePhase.FINISHED,
         noOneOpened: !hasAnyOpened,
@@ -480,11 +506,11 @@ export default function App() {
       logs: [...gameState.logs, `${player.name} desteden çekti.`]
     };
     newState.turnSnapshot = JSON.stringify({ ...newState, turnSnapshot: null });
-    setGameState(newState);
+    updateGameState(newState);
   };
 
   const drawFromDiscard = () => {
-    if (!gameState || gameState.phase !== GamePhase.DRAWING || gameState.players[gameState.currentPlayerIndex].isAI || gameState.discardPile.length === 0) return;
+    if (!gameState || gameState.phase !== GamePhase.DRAWING || gameState.currentPlayerIndex !== myPlayerIndex || gameState.discardPile.length === 0) return;
 
     const newDiscard = [...gameState.discardPile];
     const drawn = newDiscard.pop()!;
@@ -516,7 +542,7 @@ export default function App() {
       logs: [...gameState.logs, `${player.name} yerden aldı. (Açmak zorunda)`]
     };
     newState.turnSnapshot = JSON.stringify({ ...newState, turnSnapshot: null });
-    setGameState(newState);
+    updateGameState(newState);
   };
 
   const discardTile = (tileToDiscard?: Tile) => {
@@ -612,7 +638,7 @@ export default function App() {
     const newHasHandFinish = gameState.hasHandFinish || isHandFinish;
     const newNoOneOpened = !hasAnyoneOpened;
 
-    setGameState({
+    updateGameState({
       ...gameState,
       players: newPlayers,
       discardPile: [...gameState.discardPile, tile],
@@ -721,7 +747,7 @@ export default function App() {
 
       const openLogs: string[] = [`${p.name} elini açtı. Kalan puan: ${remainingScore}`];
 
-      setGameState({
+      updateGameState({
         ...gameState,
         players: newPlayers,
         currentOpenScore: Math.max(gameState.currentOpenScore, totalScore),
@@ -833,7 +859,7 @@ export default function App() {
     // Geri aldıktan sonra tekrar açma şansı var ama bu turda tekrar açamazsa ceza alır
     p.canUndoOpen = true;
 
-    setGameState({
+    updateGameState({
       ...gameState,
       players: newPlayers,
       logs: [...gameState.logs, `${p.name} açtığı ${setType === "set" ? "seriyi" : "çifti"} geri aldı.`]
@@ -864,7 +890,7 @@ export default function App() {
     // Snapshot restore edildikten sonra tekrar geri alınabilmesi için snapshot'ı koruyoruz
     restoredState.turnSnapshot = gameState.turnSnapshot;
 
-    setGameState(restoredState);
+    updateGameState(restoredState);
     setSelectedTiles([]);
   };
 
@@ -908,7 +934,7 @@ export default function App() {
         });
       });
 
-      setGameState({
+      updateGameState({
         ...gameState,
         players: newPlayers,
         currentOpenPairs: Math.max(gameState.currentOpenPairs, pairs.length),
@@ -977,7 +1003,7 @@ export default function App() {
         // Update score
         targetSet.score = calculateSetScore(targetSet, gameState.okeyTile);
 
-        setGameState({
+        updateGameState({
           ...gameState,
           players: newPlayers,
           logs: [...gameState.logs, `${p.name}, ${tp.name}'in perinden okeyi aldı.`]
@@ -1050,14 +1076,14 @@ export default function App() {
         const idx = p.hand.findIndex(ht => ht?.id === tile.id);
         p.hand[idx] = null;
 
-        setGameState({
+        updateGameState({
           ...gameState,
           players: newPlayers,
           logs: [...gameState.logs, `${p.name}, ${tp.name}'in perine taş işledi.`]
         });
         setSelectedTiles([]);
         if (checkWin(p)) {
-          setGameState(prev => prev ? { ...prev, phase: GamePhase.FINISHED, winnerId: p.id, logs: [...prev.logs, `${p.name} oyunu kazandı!`] } : null);
+          updateGameState(prev => prev ? { ...prev, phase: GamePhase.FINISHED, winnerId: p.id, logs: [...prev.logs, `${p.name} oyunu kazandı!`] } : null);
         }
       } else {
         showToast("Bu taş bu pere işlenemez.", "error");
@@ -1081,7 +1107,7 @@ export default function App() {
           const handIdx = p.hand.findIndex(ht => ht?.id === tile.id);
           p.hand[handIdx] = okeyTileInPair;
 
-          setGameState({
+          updateGameState({
             ...gameState,
             players: newPlayers,
             logs: [...gameState.logs, `${p.name}, ${tp.name}'in çiftinden okeyi aldı.`]
@@ -1103,14 +1129,14 @@ export default function App() {
           if (idx !== -1) p.hand[idx] = null;
         });
 
-        setGameState({
+        updateGameState({
           ...gameState,
           players: newPlayers,
           logs: [...gameState.logs, `${p.name} çift işledi.`]
         });
         setSelectedTiles([]);
         if (checkWin(p)) {
-          setGameState(prev => prev ? { ...prev, phase: GamePhase.FINISHED, winnerId: p.id, logs: [...prev.logs, `${p.name} oyunu kazandı!`] } : null);
+          updateGameState(prev => prev ? { ...prev, phase: GamePhase.FINISHED, winnerId: p.id, logs: [...prev.logs, `${p.name} oyunu kazandı!`] } : null);
         }
       } else {
         showToast("Seçilen taşlar geçerli bir çift değil.", "error");
@@ -1179,7 +1205,7 @@ export default function App() {
       }
       return p;
     });
-    setGameState({
+    updateGameState({
       ...gameState,
       players: newPlayers,
       discardPile: [...gameState.discardPile, player.drawnFromDiscardTile],
@@ -1188,6 +1214,66 @@ export default function App() {
     });
     setSelectedTiles([]);
   }, [gameState]);
+
+  // Socket.io initialization
+  useEffect(() => {
+    if (lobbyMode !== "menu" && lobbyMode !== "offline" && !socket) {
+      const newSocket = io("http://localhost:3001");
+      
+      newSocket.on("connect", () => {
+        console.log("Connected to server");
+      });
+
+      newSocket.on("roomCreated", (id) => {
+        console.log("Room created", id);
+        setRoomId(id);
+        setLobbyMode("room");
+      });
+
+      newSocket.on("joinedRoom", (id) => {
+        setRoomId(id);
+        setLobbyMode("room");
+      });
+
+      newSocket.on("roomUpdated", (room) => {
+        setRoomPlayers(room.players);
+      });
+
+      newSocket.on("error", (msg) => {
+        showToast(msg, "error");
+      });
+
+      newSocket.on("gameStarted", ({ state, mySeatIndex }: { state: any; mySeatIndex: number }) => {
+        // Server tells us exactly which seat we're in — no guessing needed
+        setMyPlayerIndex(mySeatIndex);
+        setGameState(state);
+      });
+
+      newSocket.on("gameStateUpdated", (state) => {
+        // Received from server when another player makes a move
+        setGameState(state);
+      });
+
+      socketRef.current = newSocket;
+      setSocket(newSocket);
+    }
+  }, [lobbyMode, showToast]);
+
+  const createRoom = () => {
+    const s = socketRef.current;
+    if (s) s.emit("createRoom", { playerName });
+    else showToast("Sunucuya bağlanılamadı.", "error");
+  };
+
+  const joinRoom = () => {
+    const s = socketRef.current;
+    if (s && roomId) s.emit("joinRoom", { roomId: roomId.toUpperCase(), playerName });
+  };
+
+  const startMultiplayerGame = () => {
+    const s = socketRef.current;
+    if (s && roomId) s.emit("startGame", roomId);
+  };
 
   if (!gameState) {
     return (
@@ -1206,37 +1292,99 @@ export default function App() {
           animate={{ scale: 1, opacity: 1 }}
           className={`w-full max-w-lg rounded-[40px] shadow-2xl overflow-hidden text-center p-12 ${isDarkMode ? "bg-slate-900 border border-slate-800" : "bg-white"}`}
         >
-          <div className="mb-8 flex justify-center">
-            <div className={`w-24 h-24 bg-blue-600 rounded-full flex items-center justify-center shadow-lg ${isDarkMode ? "shadow-blue-900/20" : "shadow-blue-200"}`}>
-              <Play size={48} className="text-white" />
-            </div>
-          </div>
-          <h1 className={`text-4xl font-black mb-2 ${isDarkMode ? "text-white" : "text-slate-900"}`}>Okey 101</h1>
-          <p className={`text-xl mb-8 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>Hoş geldiniz! Oyuna başlamak için aşağıdaki butona tıklayın.</p>
-          
-          <div className="flex flex-col gap-4">
-            <div className={`flex p-1.5 rounded-2xl mb-4 ${isDarkMode ? "bg-slate-800" : "bg-slate-100"}`}>
-              <button 
-                onClick={() => setGameMode(GameMode.STANDARD)}
-                className={`flex-1 py-3 rounded-xl font-bold transition-all ${gameMode === GameMode.STANDARD ? (isDarkMode ? 'bg-slate-700 shadow-md text-blue-400' : 'bg-white shadow-md text-blue-600') : (isDarkMode ? 'text-slate-500' : 'text-slate-500')}`}
-              >
-                Standart
-              </button>
-              <button 
-                onClick={() => setGameMode(GameMode.FOLDING)}
-                className={`flex-1 py-3 rounded-xl font-bold transition-all ${gameMode === GameMode.FOLDING ? (isDarkMode ? 'bg-slate-700 shadow-md text-blue-400' : 'bg-white shadow-md text-blue-600') : (isDarkMode ? 'text-slate-500' : 'text-slate-500')}`}
-              >
-                Katlamalı
-              </button>
-            </div>
-            
-            <button 
-              onClick={initGame}
-              className={`w-full py-5 bg-blue-600 text-white rounded-3xl font-bold text-lg shadow-xl transition-all active:scale-95 flex items-center justify-center gap-3 ${isDarkMode ? "shadow-blue-900/20 hover:bg-blue-500" : "shadow-blue-200 hover:bg-blue-700"}`}
-            >
-              <Play size={20} /> Oyunu Başlat
-            </button>
-          </div>
+          {lobbyMode === "menu" && (
+            <>
+              <div className="mb-8 flex justify-center">
+                <div className={`w-24 h-24 bg-blue-600 rounded-full flex items-center justify-center shadow-lg ${isDarkMode ? "shadow-blue-900/20" : "shadow-blue-200"}`}>
+                  <Play size={48} className="text-white" />
+                </div>
+              </div>
+              <h1 className={`text-4xl font-black mb-2 ${isDarkMode ? "text-white" : "text-slate-900"}`}>Okey 101</h1>
+              <p className={`text-sm mb-8 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>Nasıl oynamak istersiniz?</p>
+              
+              <div className="flex flex-col gap-4">
+                <button 
+                  onClick={() => setLobbyMode("offline")}
+                  className={`w-full py-5 text-white rounded-3xl font-bold text-lg shadow-xl transition-all active:scale-95 flex items-center justify-center gap-3 bg-slate-600 hover:bg-slate-500`}
+                >
+                  <Users size={20} /> Tek Oyunculu (Botlara Karşı)
+                </button>
+                <button 
+                  onClick={() => setLobbyMode("online")}
+                  className={`w-full py-5 bg-blue-600 text-white rounded-3xl font-bold text-lg shadow-xl transition-all active:scale-95 flex items-center justify-center gap-3 shadow-blue-200 hover:bg-blue-700`}
+                >
+                  <Wifi size={20} /> Çok Oyunculu (Online Lobi)
+                </button>
+              </div>
+            </>
+          )}
+
+          {lobbyMode === "offline" && (
+            <>
+              <h1 className={`text-3xl font-black mb-6 ${isDarkMode ? "text-white" : "text-slate-900"}`}>Tek Oyunculu Mod</h1>
+              <div className={`flex p-1.5 rounded-2xl mb-8 ${isDarkMode ? "bg-slate-800" : "bg-slate-100"}`}>
+                <button onClick={() => setGameMode(GameMode.STANDARD)} className={`flex-1 py-3 rounded-xl font-bold transition-all ${gameMode === GameMode.STANDARD ? (isDarkMode ? 'bg-slate-700 shadow-md text-blue-400' : 'bg-white shadow-md text-blue-600') : (isDarkMode ? 'text-slate-500' : 'text-slate-500')}`}>Standart</button>
+                <button onClick={() => setGameMode(GameMode.FOLDING)} className={`flex-1 py-3 rounded-xl font-bold transition-all ${gameMode === GameMode.FOLDING ? (isDarkMode ? 'bg-slate-700 shadow-md text-blue-400' : 'bg-white shadow-md text-blue-600') : (isDarkMode ? 'text-slate-500' : 'text-slate-500')}`}>Katlamalı</button>
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => setLobbyMode("menu")} className={`py-4 px-6 rounded-2xl font-bold transition-all ${isDarkMode ? "bg-slate-800 text-slate-300" : "bg-slate-200 text-slate-700"}`}>Geri</button>
+                <button onClick={initGame} className="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-bold text-lg shadow-xl hover:bg-blue-700 transition-all flex items-center justify-center gap-2">Oyuna Başla</button>
+              </div>
+            </>
+          )}
+
+          {lobbyMode === "online" && (
+            <>
+              <h1 className={`text-3xl font-black mb-6 ${isDarkMode ? "text-white" : "text-slate-900"}`}>Online Lobi</h1>
+              <div className="flex flex-col gap-4 text-left">
+                <div>
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-widest block mb-2">Adınız</label>
+                  <input type="text" value={playerName} onChange={e => setPlayerName(e.target.value)} className={`w-full p-4 rounded-xl font-bold border-2 focus:border-blue-500 outline-none ${isDarkMode ? "bg-slate-800 border-slate-700 text-white" : "bg-white border-slate-200 text-slate-900"}`} />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-widest block mb-2">Oda Kodu (Katılmak İçin)</label>
+                  <input type="text" value={roomId} onChange={e => setRoomId(e.target.value.toUpperCase())} placeholder="Örn: X7B9K2" className={`w-full p-4 rounded-xl font-bold border-2 focus:border-blue-500 outline-none uppercase ${isDarkMode ? "bg-slate-800 border-slate-700 text-white" : "bg-white border-slate-200 text-slate-900"}`} />
+                </div>
+                <div className="flex gap-3 mt-4">
+                  <button onClick={() => setLobbyMode("menu")} className={`py-4 px-6 rounded-2xl font-bold transition-all ${isDarkMode ? "bg-slate-800 text-slate-300" : "bg-slate-200 text-slate-700"}`}>Geri</button>
+                  <button onClick={joinRoom} className="flex-1 py-4 bg-emerald-600 text-white rounded-2xl font-bold shadow-xl hover:bg-emerald-700 transition-all">Odaya Katıl</button>
+                </div>
+                <div className="relative flex items-center py-2">
+                  <div className="flex-grow border-t border-slate-300 dark:border-slate-700"></div>
+                  <span className="flex-shrink-0 mx-4 text-slate-400 text-xs font-bold uppercase">veya</span>
+                  <div className="flex-grow border-t border-slate-300 dark:border-slate-700"></div>
+                </div>
+                <button onClick={createRoom} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-xl hover:bg-blue-700 transition-all flex items-center justify-center gap-2"><UserPlus size={20} /> Yeni Oda Kur</button>
+              </div>
+            </>
+          )}
+
+          {lobbyMode === "room" && (
+            <>
+              <h1 className={`text-2xl font-black mb-2 ${isDarkMode ? "text-white" : "text-slate-900"}`}>Bekleme Odası</h1>
+              <div className="bg-slate-800 text-blue-400 text-xl font-mono font-bold tracking-widest py-3 rounded-xl mb-6">
+                KOD: {roomId}
+              </div>
+              <div className="space-y-2 mb-8 text-left">
+                {roomPlayers.map((p, i) => (
+                  <div key={i} className={`p-4 rounded-xl flex items-center justify-between border-2 ${p.socketId === socket?.id ? "border-blue-500 bg-blue-900/20" : "border-slate-700 bg-slate-800"}`}>
+                    <span className="font-bold text-white">{p.name} {p.socketId === socket?.id && "(Sen)"}</span>
+                    <span className="text-emerald-400 text-xs font-bold uppercase">Bağlandı</span>
+                  </div>
+                ))}
+                {[...Array(4 - roomPlayers.length)].map((_, i) => (
+                  <div key={'empty-'+i} className="p-4 rounded-xl flex items-center justify-between border-2 border-dashed border-slate-700 bg-slate-800/50">
+                    <span className="font-bold text-slate-500">Oyuncu Bekleniyor...</span>
+                  </div>
+                ))}
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => setLobbyMode("online")} className={`py-4 px-6 rounded-2xl font-bold transition-all ${isDarkMode ? "bg-slate-800 text-slate-300" : "bg-slate-200 text-slate-700"}`}>Çık</button>
+                <button onClick={startMultiplayerGame} className="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-bold text-lg shadow-xl hover:bg-blue-700 transition-all flex items-center justify-center gap-2">Oyunu Başlat (Botlarla Doldur)</button>
+              </div>
+            </>
+          )}
+
         </motion.div>
       </div>
     );
@@ -1367,7 +1515,7 @@ export default function App() {
                   <DraggableDiscard 
                     tile={gameState.discardPile.length > 0 ? gameState.discardPile[gameState.discardPile.length - 1] : null} 
                     isDarkMode={isDarkMode}
-                    isDisabled={gameState.phase !== GamePhase.DRAWING || currentPlayer.isAI}
+                    isDisabled={gameState.phase !== GamePhase.DRAWING || gameState.currentPlayerIndex !== myPlayerIndex}
                     onClick={drawFromDiscard}
                   />
                 </div>
@@ -1377,7 +1525,7 @@ export default function App() {
                 {/* Deck */}
                 <DraggableDeck 
                   count={gameState.deck.length} 
-                  isDisabled={gameState.phase !== GamePhase.DRAWING || currentPlayer.isAI}
+                  isDisabled={gameState.phase !== GamePhase.DRAWING || gameState.currentPlayerIndex !== myPlayerIndex}
                   onClick={drawFromDeck}
                 />
 
@@ -1418,9 +1566,9 @@ export default function App() {
                 <DroppableDiscard 
                   id="discard-drop-zone"
                   label="Taş At"
-                  lastDiscard={gameState.players[0].lastDiscardedTile}
+                  lastDiscard={gameState.players[myPlayerIndex].lastDiscardedTile}
                   isDarkMode={isDarkMode}
-                  disabled={gameState.phase !== GamePhase.PLAYING || currentPlayer.isAI || selectedTiles.length !== 1}
+                  disabled={gameState.phase !== GamePhase.PLAYING || gameState.currentPlayerIndex !== myPlayerIndex || selectedTiles.length !== 1}
                   onClick={() => {
                     if (selectedTiles.length === 1) {
                       const player = gameState.players[gameState.currentPlayerIndex];
@@ -1437,21 +1585,21 @@ export default function App() {
             {/* Istaka */}
             <div className="w-full">
               <PlayerHand 
-                player={gameState.players[0]} 
+                player={gameState.players[myPlayerIndex]} 
                 okeyTile={gameState.okeyTile}
                 onTileClick={handleTileClick}
                 selectedTiles={selectedTiles}
-                isCurrentPlayer={gameState.currentPlayerIndex === 0}
+                isCurrentPlayer={gameState.currentPlayerIndex === myPlayerIndex}
                 onHandReorder={(newHand) => {
-                  const newPlayers = gameState.players.map((p, i) => i === 0 ? { ...p, hand: newHand } : p);
-                  setGameState({ ...gameState, players: newPlayers });
+                  const newPlayers = gameState.players.map((p, i) => i === myPlayerIndex ? { ...p, hand: newHand } : p);
+                  updateGameState({ ...gameState, players: newPlayers });
                 }}
                 onSortSets={autoSortSets}
                 onSortPairs={autoSortPairs}
                 onOpenSets={tryToOpen}
                 onOpenPairs={tryToOpenPairs}
                 onUndoOpen={undoAllOpens}
-                openedSets={gameState.players[0].openedSets}
+                openedSets={gameState.players[myPlayerIndex].openedSets}
               />
             </div>
           </div>
