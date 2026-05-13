@@ -22,26 +22,37 @@ export const DroppableSet = ({
   setIdx: number;
   type: "set" | "pair";
   tiles: Tile[];
-  onSetClick: (playerId: string, setIdx: number, type: "set" | "pair") => void;
+  onSetClick: (playerId: string, setIdx: number, type: "set" | "pair", isLeft?: boolean) => void;
 }) => {
   const { setNodeRef, isOver } = useDroppable({
     id: `drop-set-${playerId}-${type}-${setIdx}`,
     data: { playerId, setIdx, type },
   });
 
+  const handleClick = (e: React.MouseEvent) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const isLeft = x < rect.width / 2;
+    onSetClick(playerId, setIdx, type, isLeft);
+  };
+
   return (
     <motion.div
       ref={setNodeRef}
       whileHover={{ scale: 1.02 }}
-      onClick={() => onSetClick(playerId, setIdx, type)}
+      onClick={handleClick}
       className={`flex gap-0.5 p-1.5 rounded-lg cursor-pointer hover:bg-white/10 transition-all relative group border border-slate-700/50 bg-slate-800/30 ${
         isOver
           ? "bg-blue-500/30 ring-2 ring-blue-400 scale-105 z-10 border-blue-400/50"
           : ""
       }`}
     >
-      {tiles.map((t) => (
-        <TileComponent key={t.id} tile={t} size="sm" />
+      {tiles.filter(t => !!t).map((t) => (
+        <TileComponent 
+          key={t.id} 
+          tile={t} 
+          size="sm" 
+        />
       ))}
       <div className="absolute -inset-1 border-2 border-dashed border-blue-400/0 group-hover:border-blue-400/50 rounded-lg pointer-events-none transition-all" />
       {isOver && (
@@ -59,7 +70,7 @@ export const Board = ({
   onSetClick,
 }: {
   gameState: GameState;
-  onSetClick: (playerId: string, setIdx: number, type: "set" | "pair") => void;
+  onSetClick: (playerId: string, setIdx: number, type: "set" | "pair", isLeft?: boolean) => void;
 }) => {
   return (
     <div className="w-full h-full bg-emerald-500/20 dark:bg-emerald-500/10 rounded-xl border-2 border-emerald-500/30 p-3 min-h-[180px] overflow-y-auto custom-scrollbar">
@@ -104,7 +115,7 @@ export const PairsBoard = ({
   onSetClick,
 }: {
   gameState: GameState;
-  onSetClick: (playerId: string, setIdx: number, type: "set" | "pair") => void;
+  onSetClick: (playerId: string, setIdx: number, type: "set" | "pair", isLeft?: boolean) => void;
 }) => {
   return (
     <div className="flex-1 bg-purple-500/20 dark:bg-purple-500/10 rounded-xl border-2 border-purple-500/30 p-3 min-h-[180px] h-full overflow-y-auto custom-scrollbar">

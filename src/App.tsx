@@ -298,6 +298,10 @@ export default function App() {
   }, [gameState]);
 
   const initGame = useCallback(() => {
+    if (isOnlineGame) {
+      startMultiplayerGame();
+      return;
+    }
     const deck = shuffle(createDeck());
     const nonJokerIndices = deck
       .map((tile, index) => (tile.color === Color.JOKER ? null : index))
@@ -602,7 +606,7 @@ export default function App() {
 
     const newPlayers = gameState.players.map((p, i) => 
       i === gameState.currentPlayerIndex 
-        ? { ...p, hand: [...p.hand], lastDiscardedTile: tile, mustOpen: false, score: p.score + penaltyScore, currentTurnOpenedTileIds: [], openedThisTurn: false } 
+        ? { ...p, hand: [...p.hand], lastDiscardedTile: tile, mustOpen: false, drawnFromDiscardTile: undefined, score: p.score + penaltyScore, currentTurnOpenedTileIds: [], openedThisTurn: false } 
         : p
     );
     newPlayers[gameState.currentPlayerIndex].hand[tileIdx] = null;
@@ -638,14 +642,22 @@ export default function App() {
     const newHasHandFinish = gameState.hasHandFinish || isHandFinish;
     const newNoOneOpened = !hasAnyoneOpened;
 
+    const isDeckEmpty = gameState.deck.length === 0;
+    const finalPhase = isWin || isDeckEmpty ? GamePhase.FINISHED : GamePhase.DRAWING;
+    const finalLogs = [...gameState.logs, winMsg, ...extraLogs];
+    if (!isWin && isDeckEmpty) {
+      const hasAnyOpened = newPlayers.some(p => p.hasOpened);
+      finalLogs.push(hasAnyOpened ? "Deste bitti. Oyun sona erdi." : "Deste bitti. Kimse açmadı — herkes 202 ceza alır!");
+    }
+
     updateGameState({
       ...gameState,
       players: newPlayers,
       discardPile: [...gameState.discardPile, tile],
       currentPlayerIndex: isWin ? gameState.currentPlayerIndex : (gameState.currentPlayerIndex + 1) % 4,
-      phase: isWin ? GamePhase.FINISHED : GamePhase.DRAWING,
+      phase: finalPhase,
       winnerId: isWin ? player.id : null,
-      logs: [...gameState.logs, winMsg, ...extraLogs],
+      logs: finalLogs,
       hasDoubleOpen: newHasDoubleOpen,
       hasOkeyDiscard: newHasOkeyDiscard,
       hasContinuationDiscard: newHasContinuationDiscard,
@@ -733,11 +745,11 @@ export default function App() {
       p.openedSets = [...p.openedSets, ...setsToOpen];
       p.lastOpenScore = totalScore;
       // Bu sırada açılan taşları kaydet (geri al sadece bunları geri alır)
-      const openedTileIds = setsToOpen.flatMap(s => s.tiles.map(t => t.id));
+      const openedTileIds = setsToOpen.flatMap(s => s.tiles.filter(t => !!t).map(t => t.id));
       p.currentTurnOpenedTileIds = [...p.currentTurnOpenedTileIds, ...openedTileIds];
       
       // Remove from hand by setting to null
-      const tilesToRemove = setsToOpen.flatMap(s => s.tiles);
+      const tilesToRemove = setsToOpen.flatMap(s => s.tiles.filter(t => !!t));
       tilesToRemove.forEach(t => {
         const idx = p.hand.findIndex(ht => ht?.id === t.id);
         if (idx !== -1) p.hand[idx] = null;
@@ -756,7 +768,7 @@ export default function App() {
       setSelectedTiles([]);
     } else {
       if (totalScore < minScore) {
-        showToast(`Açmak için en az ${minScore} puan gerekiyor. Şu an: ${totalScore}`, "error");
+        showToast(`Açmak için en az ${minScore} puan gerekiyor. Şu an: ${Math.floor(totalScore)}`, "error");
       } else {
         showToast("Açılacak geçerli bir per bulunamadı.", "error");
       }
@@ -902,7 +914,7 @@ export default function App() {
       ? player.hand.filter((t): t is Tile => t !== null && selectedTiles.includes(t.id))
       : player.hand.filter((t): t is Tile => t !== null);
 
-    const pairs = findPairs(tilesToProcess, gameState.okeyTile);
+    const pairs = findPairs(tilesToProcess, gameState.okeyTile, selectedTiles.length > 0);
     
     // If already opened with sets, can lay down pairs if anyone else opened pairs
     const minPairs = player.hasOpened 
@@ -923,7 +935,7 @@ export default function App() {
       p.openedPairs = [...p.openedPairs, ...pairs];
       p.lastOpenScore = pairs.length;
       // Bu sırada açılan taşları kaydet
-      const openedPairTileIds = pairs.flatMap(pair => pair.map(t => t.id));
+      const openedPairTileIds = pairs.flatMap(pair => pair.filter(t => !!t).map(t => t.id));
       p.currentTurnOpenedTileIds = [...p.currentTurnOpenedTileIds, ...openedPairTileIds];
 
       // Remove from hand
@@ -946,7 +958,7 @@ export default function App() {
     }
   };
 
-  const processTile = (targetPlayerId: string, setIdx: number, type: "set" | "pair") => {
+  const processTile = (targetPlayerId: string, setIdx: number, type: "set" | "pair", preferLeft: boolean = false) => {
     if (!gameState || (gameState.phase !== GamePhase.PLAYING && gameState.phase !== GamePhase.DISCARDING) || selectedTiles.length === 0) return;
     const player = gameState.players[gameState.currentPlayerIndex];
     if (!player.hasOpened) {
@@ -1038,7 +1050,18 @@ export default function App() {
             if (isWildcard(addedTile, gameState.okeyTile)) {
               const startNum = anchorNumber - normalIdx;
               const endNum = startNum + targetSet.tiles.length - 1;
-              addedRep = endNum < 13 ? endNum + 1 : startNum - 1;
+              
+              const canGoLeft = startNum > 1;
+              const canGoRight = endNum < 13;
+
+              if (preferLeft && canGoLeft) {
+                addedRep = startNum - 1;
+              } else if (!preferLeft && canGoRight) {
+                addedRep = endNum + 1;
+              } else {
+                // Fallback: eğer tercih edilen taraf doluysa diğerini dene
+                addedRep = canGoRight ? endNum + 1 : startNum - 1;
+              }
             }
 
             // Yeni taşı ekleyelim
@@ -1075,6 +1098,12 @@ export default function App() {
         
         const idx = p.hand.findIndex(ht => ht?.id === tile.id);
         p.hand[idx] = null;
+
+        // İşlenen taş yerden alınan taş ise, yerden alma durumunu temizle
+        if (p.drawnFromDiscardTile && tile.id === p.drawnFromDiscardTile.id) {
+          p.drawnFromDiscardTile = undefined;
+          p.mustOpen = false;
+        }
 
         updateGameState({
           ...gameState,
@@ -1125,6 +1154,7 @@ export default function App() {
       if (pair && canProcessPair(pair, gameState.okeyTile)) {
         p.openedPairs.push(pair);
         pair.forEach(t => {
+          if (!t) return;
           const idx = p.hand.findIndex(ht => ht?.id === t.id);
           if (idx !== -1) p.hand[idx] = null;
         });
@@ -1218,10 +1248,25 @@ export default function App() {
   // Socket.io initialization
   useEffect(() => {
     if (lobbyMode !== "menu" && lobbyMode !== "offline" && !socket) {
-      const newSocket = io("http://localhost:3001");
+      // Use the current host to connect to the server (port 3001)
+      const serverUrl = window.location.hostname === 'localhost' 
+        ? 'http://localhost:3001' 
+        : `${window.location.protocol}//${window.location.hostname}:3001`;
+      
+      console.log("Connecting to multiplayer server at:", serverUrl);
+      const newSocket = io(serverUrl, {
+        reconnectionAttempts: 5,
+        timeout: 10000,
+      });
       
       newSocket.on("connect", () => {
-        console.log("Connected to server");
+        console.log("Connected to server with ID:", newSocket.id);
+        setSocket(newSocket);
+      });
+
+      newSocket.on("connect_error", (err) => {
+        console.error("Socket connection error:", err);
+        showToast("Sunucuya bağlanılamadı. Lütfen sunucunun çalıştığından emin olun.", "error");
       });
 
       newSocket.on("roomCreated", (id) => {
@@ -1244,30 +1289,41 @@ export default function App() {
       });
 
       newSocket.on("gameStarted", ({ state, mySeatIndex }: { state: any; mySeatIndex: number }) => {
-        // Server tells us exactly which seat we're in — no guessing needed
         setMyPlayerIndex(mySeatIndex);
         setGameState(state);
       });
 
       newSocket.on("gameStateUpdated", (state) => {
-        // Received from server when another player makes a move
         setGameState(state);
       });
 
       socketRef.current = newSocket;
-      setSocket(newSocket);
     }
-  }, [lobbyMode, showToast]);
+  }, [lobbyMode, socket, showToast]);
 
   const createRoom = () => {
     const s = socketRef.current;
-    if (s) s.emit("createRoom", { playerName });
-    else showToast("Sunucuya bağlanılamadı.", "error");
+    if (s && s.connected) {
+      s.emit("createRoom", { playerName });
+    } else {
+      showToast("Sunucuyla bağlantı kuruluyor veya bağlantı kesildi. Lütfen bekleyin...", "warning");
+      // If socket exists but disconnected, try to reconnect
+      if (s) s.connect();
+    }
   };
 
   const joinRoom = () => {
     const s = socketRef.current;
-    if (s && roomId) s.emit("joinRoom", { roomId: roomId.toUpperCase(), playerName });
+    if (!roomId) {
+      showToast("Lütfen bir oda kodu girin.", "warning");
+      return;
+    }
+    if (s && s.connected) {
+      s.emit("joinRoom", { roomId: roomId.toUpperCase(), playerName });
+    } else {
+      showToast("Sunucuya bağlı değilsiniz.", "error");
+      if (s) s.connect();
+    }
   };
 
   const startMultiplayerGame = () => {
@@ -1426,7 +1482,7 @@ export default function App() {
             <div className={`hidden md:flex items-center gap-6 px-6 py-2 rounded-full border ${isDarkMode ? "bg-slate-800 border-slate-700" : "bg-slate-50 border-slate-200"}`}>
               <div className="flex items-center gap-2">
                 <Hash size={16} className="text-blue-500" />
-                <span className="text-sm font-bold">{gameState.currentOpenScore || 101}</span>
+                <span className="text-sm font-bold">{Math.floor(gameState.currentOpenScore) || 101}</span>
                 <span className="text-[10px] text-slate-400 font-bold uppercase">Baraj</span>
               </div>
               <div className="w-px h-4 bg-slate-200" />
@@ -1529,7 +1585,7 @@ export default function App() {
                   onClick={drawFromDeck}
                 />
 
-                {currentPlayer.mustOpen && !currentPlayer.hasOpened && (
+                {currentPlayer.drawnFromDiscardTile && (
                   <ReturnDiscardButton
                     onReturn={returnDrawnTile}
                     disabled={gameState.phase !== GamePhase.PLAYING || currentPlayer.isAI}
@@ -1623,7 +1679,7 @@ export default function App() {
                           <span className="text-[8px] px-1.5 py-0.5 bg-red-500/10 text-red-500 rounded-full font-black border border-red-500/20">AÇMADI</span>
                         )}
                         {p.hasOpened && p.lastOpenScore > 0 && (
-                          <span className="text-[8px] px-1.5 py-0.5 bg-emerald-500/10 text-emerald-600 rounded-full font-black border border-emerald-500/20">{p.lastOpenScore} PTS</span>
+                          <span className="text-[8px] px-1.5 py-0.5 bg-emerald-500/10 text-emerald-600 rounded-full font-black border border-emerald-500/20">{Math.floor(p.lastOpenScore)} PTS</span>
                         )}
                         {p.openedWithPairs && (
                           <span className="text-[8px] px-1.5 py-0.5 bg-purple-500/10 text-purple-500 rounded-full font-black border border-purple-500/20">ÇİFT</span>
@@ -1632,7 +1688,7 @@ export default function App() {
                     </div>
                     <div className="text-right">
                       <span className={`text-sm font-black ${p.score > 0 ? "text-red-500" : "text-emerald-500"}`}>
-                        {p.score > 0 ? `+${p.score}` : p.score}
+                        {p.score > 0 ? `+${Math.floor(p.score)}` : Math.floor(p.score)}
                       </span>
                     </div>
                   </div>
@@ -1806,20 +1862,28 @@ export default function App() {
               </div>
 
               <div className="flex gap-3 mb-2">
-                {gameState.roundNumber < totalRounds ? (
-                  <button
-                    onClick={newRound}
-                    className="flex-1 py-4 bg-emerald-600 text-white rounded-3xl font-bold text-base shadow-xl shadow-emerald-200/20 hover:bg-emerald-500 transition-all active:scale-95"
-                  >
-                    Sonraki El →
-                  </button>
-                ) : null}
-                <button 
-                  onClick={initGame}
-                  className={`py-4 text-white rounded-3xl font-bold text-base transition-all active:scale-95 ${gameState.roundNumber < totalRounds ? "flex-none px-6 bg-slate-600 hover:bg-slate-500" : "flex-1 bg-blue-600 hover:bg-blue-700 shadow-xl shadow-blue-200/20"}`}
-                >
-                  Yeni Oyun
-                </button>
+                {(!isOnlineGame || myPlayerIndex === 0) ? (
+                  <>
+                    {gameState.roundNumber < totalRounds ? (
+                      <button
+                        onClick={newRound}
+                        className="flex-1 py-4 bg-emerald-600 text-white rounded-3xl font-bold text-base shadow-xl shadow-emerald-200/20 hover:bg-emerald-500 transition-all active:scale-95"
+                      >
+                        Sonraki El →
+                      </button>
+                    ) : null}
+                    <button 
+                      onClick={initGame}
+                      className={`py-4 text-white rounded-3xl font-bold text-base transition-all active:scale-95 ${gameState.roundNumber < totalRounds ? "flex-none px-6 bg-slate-600 hover:bg-slate-500" : "flex-1 bg-blue-600 hover:bg-blue-700 shadow-xl shadow-blue-200/20"}`}
+                    >
+                      Yeni Oyun
+                    </button>
+                  </>
+                ) : (
+                  <div className="flex-1 py-4 bg-slate-800 text-slate-400 rounded-3xl font-bold text-center italic border border-slate-700">
+                    Host yeni elin başlamasını bekliyor...
+                  </div>
+                )}
               </div>
             </motion.div>
           </div>

@@ -74,7 +74,9 @@ io.on('connection', (socket) => {
     if (room && room.players.length > 0) {
       
       const deck = shuffle(createDeck());
-      const indicator = deck.pop()!;
+      const nonJokerIndices = deck.map((t, i) => t.color === Color.JOKER ? null : i).filter((i): i is number => i !== null);
+      const indicatorIndex = nonJokerIndices[Math.floor(Math.random() * nonJokerIndices.length)];
+      const [indicator] = deck.splice(indicatorIndex, 1);
       const okeyTile = determineOkey(indicator);
 
       // Create Players

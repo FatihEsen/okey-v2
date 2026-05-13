@@ -39,17 +39,18 @@ export const determineOkey = (indicator: Tile) => {
   return { number: okeyNum, color: indicator.color };
 };
 
-export const isRealOkey = (tile: Tile, okeyTile: { number: number; color: Color } | null): boolean => {
+export const isRealOkey = (tile: Tile | null | undefined, okeyTile: { number: number; color: Color } | null): boolean => {
+  if (!tile) return false;
   return !!(okeyTile && tile.number === okeyTile.number && tile.color === okeyTile.color);
 };
 
-export const isFakeOkey = (tile: Tile): boolean => {
-  return tile.color === Color.JOKER;
+export const isFakeOkey = (tile: Tile | null | undefined): boolean => {
+  return tile?.color === Color.JOKER;
 };
 
-export const isWildcard = (tile: Tile, okeyTile: { number: number; color: Color } | null): boolean => {
+export const isWildcard = (tile: Tile | null | undefined, okeyTile: { number: number; color: Color } | null): boolean => {
+  if (!tile) return false;
   // Sadece gerçek okey wildcard'dır
-  // Joker (fake okey) sadece okey'nin yerini tutabilir, normal wildcard değildir
   return isRealOkey(tile, okeyTile);
 };
 
@@ -89,28 +90,35 @@ export const calculateDiscardPenalty = (tile: Tile, gameState: GameState, player
 };
 
 export const calculateSetScore = (set: Combination, okeyTile: { number: number; color: Color } | null): number => {
+    let score = 0;
     if (set.type === "group") {
         const normalTile = set.tiles.find(t => !isWildcard(t, okeyTile));
         if (!normalTile) return 0;
         const effective = getEffectiveTile(normalTile, okeyTile);
         let val = effective.number;
-        return val * set.tiles.length;
+        score = val * set.tiles.length;
     } else {
         const normalTiles = set.tiles.filter(t => !isWildcard(t, okeyTile));
         if (normalTiles.length === 0) return 0;
         const effTiles = normalTiles.map(t => getEffectiveTile(t, okeyTile));
         const nums = effTiles.map(t => t.number);
         
-        const minNum = Math.min(...nums);
-        const firstNormalIdx = set.tiles.findIndex(t => !isWildcard(t, okeyTile) && getEffectiveTile(t, okeyTile).number === minNum);
-        const startNum = minNum - firstNormalIdx;
+        const startNum = getRunStartNum(set.tiles, okeyTile);
         
         let sum = 0;
         for (let i = 0; i < set.tiles.length; i++) {
             sum += (startNum + i);
         }
-        return sum;
+        score = sum;
+        score += 0.01; // Seri (run) perler, aynı puandaki gruplara göre tercih edilsin
     }
+    
+    // 2 okeyi aynı perde kullanmamaya teşvik etmek için küçük bir ceza
+    const okeyCount = set.tiles.filter(t => isWildcard(t, okeyTile)).length;
+    if (okeyCount > 1) {
+        score -= 0.1; // Skor bazlı tercihlerde çok küçük bir azaltma split'i tetikler
+    }
+    return score;
 };
 
 export const isValidGroup = (tiles: Tile[], okeyTile: { number: number; color: Color } | null): boolean => {
@@ -122,6 +130,19 @@ export const isValidGroup = (tiles: Tile[], okeyTile: { number: number; color: C
   const colors = normalTiles.map(t => t.color);
   if (new Set(colors).size !== colors.length) return false;
   return true;
+};
+
+export const getRunStartNum = (tiles: Tile[], okeyTile: { number: number; color: Color } | null): number => {
+    const normalTiles = tiles.filter(t => !isWildcard(t, okeyTile));
+    if (normalTiles.length === 0) return 1;
+    const minNormal = Math.min(...normalTiles.map(t => getEffectiveTile(t, okeyTile).number));
+    const firstNormalIdx = tiles.findIndex(t => !isWildcard(t, okeyTile));
+    let startNum = minNormal - firstNormalIdx;
+    
+    // Seri 1-13 sınırları içinde kalacak şekilde ayarla
+    if (startNum + tiles.length - 1 > 13) startNum = 13 - tiles.length + 1;
+    if (startNum < 1) startNum = 1;
+    return startNum;
 };
 
 export const isValidRun = (tiles: Tile[], okeyTile: { number: number; color: Color } | null): boolean => {
@@ -136,7 +157,40 @@ export const isValidRun = (tiles: Tile[], okeyTile: { number: number; color: Col
 
   const min = Math.min(...nums);
   const max = Math.max(...nums);
-  return (max - min + 1) <= tiles.length;
+  
+  // Lineerlik kontrolü
+  if ((max - min + 1) > tiles.length) return false;
+
+  const startNum = getRunStartNum(tiles, okeyTile);
+  const endNum = startNum + tiles.length - 1;
+
+  // Tüm normal taşların bu aralıkta olduğunu doğrula
+  if (min < startNum || max > endNum) return false;
+
+  return startNum >= 1 && endNum <= 13;
+};
+
+const getCombinations = <T>(array: T[], k: number): T[][] => {
+  const result: T[][] = [];
+  const f = (start: number, prev: T[]) => {
+    if (prev.length === k) { result.push(prev); return; }
+    for (let i = start; i < array.length; i++) f(i + 1, [...prev, array[i]]);
+  };
+  f(0, []);
+  return result;
+};
+
+const generateTileCombos = (tilesBySlot: Tile[][]): Tile[][] => {
+  if (tilesBySlot.length === 0) return [[]];
+  const firstSlot = tilesBySlot[0];
+  const rest = generateTileCombos(tilesBySlot.slice(1));
+  const result: Tile[][] = [];
+  for (const t of firstSlot) {
+    for (const r of rest) {
+      result.push([t, ...r]);
+    }
+  }
+  return result;
 };
 
 export const findBestSets = (hand: (Tile | null)[], okeyTile: { number: number; color: Color } | null): Combination[] => {
@@ -145,71 +199,67 @@ export const findBestSets = (hand: (Tile | null)[], okeyTile: { number: number; 
   const wildcards = tiles.filter(t => isWildcard(t, okeyTile));
 
   for (let num = 1; num <= 13; num++) {
-    const groupCandidates = tiles.filter(t => !isWildcard(t, okeyTile) && getEffectiveTile(t, okeyTile).number === num);
-    const uniqueColors: Tile[] = [];
-    const colorsSeen = new Set<Color>();
-    groupCandidates.forEach(t => {
-      const color = getEffectiveTile(t, okeyTile).color;
-      if (!colorsSeen.has(color)) { uniqueColors.push(t); colorsSeen.add(color); }
-    });
+    const tilesOfNum = tiles.filter(t => !isWildcard(t, okeyTile) && getEffectiveTile(t, okeyTile).number === num);
+    const tilesByColor: Record<string, Tile[]> = { [Color.RED]: [], [Color.YELLOW]: [], [Color.BLACK]: [], [Color.BLUE]: [] };
+    tilesOfNum.forEach(t => tilesByColor[getEffectiveTile(t, okeyTile).color].push(t));
 
     for (let len = 3; len <= 4; len++) {
-      const usedNormal = uniqueColors.slice(0, Math.min(uniqueColors.length, len));
-      const neededWildcards = len - usedNormal.length;
-      // Her perde en fazla 1 okey kullanabilir — iki okey varsa ayrı perdelere dağıt
-      if (neededWildcards > 1) continue;
-      if (neededWildcards === 0 && usedNormal.length === len) {
-        const score = calculateSetScore({ tiles: usedNormal, type: "group", score: 0 }, okeyTile);
-        allCandidates.push({ tiles: usedNormal, type: "group", score });
-      } else if (neededWildcards === 1 && wildcards.length >= 1) {
-        // Her okey taşı için ayrı aday üret — backtrack hangi okey'i nereye koyacağını seçer
-        for (const wc of wildcards) {
-          const setTiles = [...usedNormal, wc];
-          const score = calculateSetScore({ tiles: setTiles, type: "group", score: 0 }, okeyTile);
-          allCandidates.push({ tiles: setTiles, type: "group", score });
+      const colorCombos = getCombinations(COLORS, len);
+      for (const colors of colorCombos) {
+        const slots = colors.map(c => tilesByColor[c]);
+        const emptySlotCount = slots.filter(s => s.length === 0).length;
+        if (emptySlotCount > wildcards.length) continue;
+
+        const filledSlots = slots.filter(s => s.length > 0);
+        const tileCombos = generateTileCombos(filledSlots);
+        const okeyCombos = emptySlotCount > 0 ? getCombinations(wildcards, emptySlotCount) : [[]];
+
+        for (const tCombo of tileCombos) {
+          for (const okeys of okeyCombos) {
+            const setTiles = [...tCombo, ...okeys];
+            const score = calculateSetScore({ tiles: setTiles, type: "group", score: 0 }, okeyTile);
+            allCandidates.push({ tiles: setTiles, type: "group", score });
+          }
         }
       }
     }
   }
 
-  for (const color of COLORS) {
-    const colorTiles = tiles.filter(t => !isWildcard(t, okeyTile) && getEffectiveTile(t, okeyTile).color === color)
-      .sort((a, b) => getEffectiveTile(a, okeyTile).number - getEffectiveTile(b, okeyTile).number);
+    for (const color of COLORS) {
+    const colorTiles = tiles.filter(t => !isWildcard(t, okeyTile) && getEffectiveTile(t, okeyTile).color === color);
+    const tilesByNum: Tile[][] = Array.from({ length: 14 }, () => []);
+    colorTiles.forEach(t => tilesByNum[getEffectiveTile(t, okeyTile).number].push(t));
 
     for (let len = 3; len <= 13; len++) {
       for (let startNum = 1; startNum <= 13 - len + 1; startNum++) {
-        const runNumbers = Array.from({ length: len }, (_, i) => startNum + i);
-
-        // Önce normal taşlarla iskeleti doldur, okey gereken pozisyonları işaretle
-        const skeleton: (Tile | null)[] = [];
-        let wildSlotsNeeded = 0;
-
-        for (const targetNum of runNumbers) {
-          const available = colorTiles.find(t =>
-            getEffectiveTile(t, okeyTile).number === targetNum &&
-            !skeleton.some(rt => rt !== null && rt.id === t.id)
-          );
-          if (available) {
-            skeleton.push(available);
+        const slots: Tile[][] = [];
+        let neededWilds = 0;
+        for (let n = startNum; n < startNum + len; n++) {
+          if (tilesByNum[n].length > 0) {
+            slots.push(tilesByNum[n]);
           } else {
-            skeleton.push(null);
-            wildSlotsNeeded++;
+            slots.push([]); // Placeholder
+            neededWilds++;
           }
         }
 
-        // Her perde en fazla 1 okey — iki slot gerekiyorsa bu adayı atla
-        if (wildSlotsNeeded > 1) continue;
+        if (neededWilds > wildcards.length) continue;
 
-        if (wildSlotsNeeded === 0) {
-          const runTiles = skeleton as Tile[];
-          const score = calculateSetScore({ tiles: runTiles, type: "run", score: 0 }, okeyTile);
-          allCandidates.push({ tiles: runTiles, type: "run", score });
-        } else if (wildcards.length >= 1) {
-          // Her okey taşı için ayrı aday üret
-          for (const wc of wildcards) {
-            const currentRun = skeleton.map(t => t ?? wc) as Tile[];
-            const score = calculateSetScore({ tiles: currentRun, type: "run", score: 0 }, okeyTile);
-            allCandidates.push({ tiles: currentRun, type: "run", score });
+        const filledSlots = slots.map((s, i) => ({ s, i })).filter(x => x.s.length > 0);
+        const tCombos = generateTileCombos(filledSlots.map(x => x.s));
+        const okeyCombos = neededWilds > 0 ? getCombinations(wildcards, neededWilds) : [[]];
+
+        for (const tCombo of tCombos) {
+          for (const okeys of okeyCombos) {
+            const finalTiles: Tile[] = new Array(len);
+            let tIdx = 0;
+            let oIdx = 0;
+            for (let i = 0; i < len; i++) {
+              if (slots[i].length > 0) finalTiles[i] = tCombo[tIdx++];
+              else finalTiles[i] = okeys[oIdx++];
+            }
+            const score = calculateSetScore({ tiles: finalTiles, type: "run", score: 0 }, okeyTile);
+            allCandidates.push({ tiles: finalTiles, type: "run", score });
           }
         }
       }
@@ -240,57 +290,48 @@ export const findBestSets = (hand: (Tile | null)[], okeyTile: { number: number; 
   return bestResult;
 };
 
-export const findPairs = (hand: (Tile | null)[], okeyTile: { number: number; color: Color } | null): Tile[][] => {
+export const findPairs = (hand: (Tile | null)[], okeyTile: { number: number; color: Color } | null, allowOkeyWithNormal: boolean = true): Tile[][] => {
   const tiles = hand.filter((t): t is Tile => t !== null);
   const pairs: Tile[][] = [];
   const usedIds = new Set<string>();
-  const normalTiles = tiles.filter(t => !isWildcard(t, okeyTile) && !isFakeOkey(t));
+  
+  // 1) Normal ve Sahte Okey'leri eşleştir (getEffectiveTile sayesinde sahte okeyler normal taş gibi davranır)
+  const normalAndFakeTiles = tiles.filter(t => !isWildcard(t, okeyTile));
   const realOkeys = tiles.filter(t => isRealOkey(t, okeyTile));
-  const fakeOkeys = tiles.filter(t => isFakeOkey(t));
 
-  // 1) Önce normal-normal eşleşmeleri bul
-  for (let i = 0; i < normalTiles.length; i++) {
-    if (usedIds.has(normalTiles[i].id)) continue;
-    for (let j = i + 1; j < normalTiles.length; j++) {
-      if (usedIds.has(normalTiles[j].id)) continue;
-      const t1 = getEffectiveTile(normalTiles[i], okeyTile);
-      const t2 = getEffectiveTile(normalTiles[j], okeyTile);
+  for (let i = 0; i < normalAndFakeTiles.length; i++) {
+    if (usedIds.has(normalAndFakeTiles[i].id)) continue;
+    for (let j = i + 1; j < normalAndFakeTiles.length; j++) {
+      if (usedIds.has(normalAndFakeTiles[j].id)) continue;
+      const t1 = getEffectiveTile(normalAndFakeTiles[i], okeyTile);
+      const t2 = getEffectiveTile(normalAndFakeTiles[j], okeyTile);
       if (t1.number === t2.number && t1.color === t2.color) {
-        pairs.push([normalTiles[i], normalTiles[j]]);
-        usedIds.add(normalTiles[i].id);
-        usedIds.add(normalTiles[j].id);
+        pairs.push([normalAndFakeTiles[i], normalAndFakeTiles[j]]);
+        usedIds.add(normalAndFakeTiles[i].id);
+        usedIds.add(normalAndFakeTiles[j].id);
         break;
       }
     }
   }
 
-  // 2) Gerçek okey eşleme: her okey'i, eşi olmayan farklı bir normal taşla potansiyel çift olarak işaretle
-  const lonelyNormals = normalTiles.filter(t => !usedIds.has(t.id));
-  for (const okey of realOkeys) {
-    const partner = lonelyNormals.find(t => !usedIds.has(t.id));
-    if (!partner) break;
-    pairs.push([partner, okey]);
-    usedIds.add(partner.id);
-    usedIds.add(okey.id);
+  // 2) Gerçek okeyleri kendi aralarında eşleştir (2 okey = 1 çift)
+  const availableOkeys = realOkeys.filter(t => !usedIds.has(t.id));
+  for (let i = 0; i < availableOkeys.length - 1; i += 2) {
+    pairs.push([availableOkeys[i], availableOkeys[i + 1]]);
+    usedIds.add(availableOkeys[i].id);
+    usedIds.add(availableOkeys[i + 1].id);
   }
 
-  // 3) Joker eşleme: joker SADECE okey'nin eşi olan taş ile çift oluşturabilir
-  // Okey = beyaz 5 ise, joker + beyaz 5 = çift
-  if (okeyTile && fakeOkeys.length > 0) {
-    // Okey'nin eşi olan taş (aynı sayı ve renk)
-    const okeyPartner = normalTiles.find(t => {
-      const eff = getEffectiveTile(t, okeyTile);
-      return eff.number === okeyTile.number && eff.color === okeyTile.color && !usedIds.has(t.id);
-    });
-
-    // Joker'leri okey'nin eşi ile eşle
-    for (const joker of fakeOkeys) {
-      if (okeyPartner && !usedIds.has(okeyPartner.id)) {
-        pairs.push([okeyPartner, joker]);
-        usedIds.add(okeyPartner.id);
-        usedIds.add(joker.id);
-        break; // Her joker için bir eş bulabilir
-      }
+  // 3) Kalan gerçek okey'leri, eşi olmayan farklı bir taşla çift oluştur (Opsiyonel)
+  if (allowOkeyWithNormal) {
+    const remainingOkeys = availableOkeys.filter(t => !usedIds.has(t.id));
+    const lonelyTiles = normalAndFakeTiles.filter(t => !usedIds.has(t.id));
+    for (const okey of remainingOkeys) {
+      const partner = lonelyTiles.find(t => !usedIds.has(t.id));
+      if (!partner) break;
+      pairs.push([partner, okey]);
+      usedIds.add(partner.id);
+      usedIds.add(okey.id);
     }
   }
 
@@ -304,7 +345,7 @@ export const calculateHandTotal = (hand: (Tile | null)[], okeyTile: { number: nu
 
 export const sortByPairs = (hand: (Tile | null)[], okeyTile: { number: number; color: Color } | null): (Tile | null)[] => {
   const tiles = hand.filter((t): t is Tile => t !== null);
-  const pairs = findPairs(tiles, okeyTile);
+  const pairs = findPairs(tiles, okeyTile, false);
   const pairedIds = new Set(pairs.flat().map(t => t.id));
   const remainingTiles = tiles.filter(t => !pairedIds.has(t.id)).sort((a,b) => a.number - b.number);
   
@@ -347,16 +388,27 @@ export const sortBySets = (hand: (Tile | null)[], okeyTile: { number: number; co
   // rightPos artık setlerin kullanabileceği son slot (dahil)
   const setsBoundary = rightPos;
 
-  // 2. Setleri soldan yerleştir, 6+ taşlıysa 3'erli parçalara böl
+  // 2. Setleri soldan yerleştir
   let pos = 0;
   for (const set of sets) {
-    const chunks: Tile[][] = set.tiles.length >= 6
-      ? Array.from({ length: Math.ceil(set.tiles.length / 3) }, (_, i) =>
-          set.tiles.slice(i * 3, (i + 1) * 3))
-      : [set.tiles];
+    const tiles = set.tiles;
+    const chunks: Tile[][] = [];
+    
+    if (tiles.length >= 6) {
+      let n = tiles.length;
+      let offset = 0;
+      while (n > 0) {
+        let size = (n % 3 === 0) ? 3 : 4;
+        chunks.push(tiles.slice(offset, offset + size));
+        offset += size;
+        n -= size;
+      }
+    } else {
+      chunks.push(tiles);
+    }
 
     for (const chunk of chunks) {
-      if (pos + chunk.length - 1 > setsBoundary) break; // sınırı aşma
+      if (pos + chunk.length > setsBoundary) break;
       chunk.forEach(t => { result[pos++] = t; });
       if (pos <= setsBoundary) pos++; // gruplar arası boşluk
     }
@@ -377,13 +429,7 @@ export const canProcessTile = (tile: Tile, set: Combination, okeyTile: { number:
   }
 
   // Run: Uçlara ekleme kontrolü
-  const normalIdx = set.tiles.findIndex(t => !isWildcard(t, okeyTile));
-  if (normalIdx === -1) return false;
-
-  const anchorNum = getEffectiveTile(set.tiles[normalIdx], okeyTile).number;
-  const runColor = getEffectiveTile(set.tiles[normalIdx], okeyTile).color;
-
-  const startNum = anchorNum - normalIdx;
+  const startNum = getRunStartNum(set.tiles, okeyTile);
   const endNum = startNum + set.tiles.length - 1;
 
   if (isWildcard(tile, okeyTile)) {
@@ -392,6 +438,7 @@ export const canProcessTile = (tile: Tile, set: Combination, okeyTile: { number:
   }
 
   const effectiveTile = getEffectiveTile(tile, okeyTile);
+  const runColor = getEffectiveTile(set.tiles.find(t => !isWildcard(t, okeyTile))!, okeyTile).color;
   if (effectiveTile.color !== runColor) return false;
   
   // Sadece tam uca eklenmesine izin ver
@@ -405,15 +452,17 @@ export const canSwapOkey = (tile: Tile, set: Combination, okeyTile: { number: nu
   if (set.type === "group") {
     const normalTiles = set.tiles.filter(t => !isWildcard(t, okeyTile));
     if (normalTiles.length === 0) return false;
-    const groupNumber = getEffectiveTile(normalTiles[0], okeyTile).number;
     const eff = getEffectiveTile(tile, okeyTile);
+    const groupNumber = getEffectiveTile(normalTiles[0], okeyTile).number;
     if (eff.number !== groupNumber) return false;
+    
+    // Grupta zaten var olan bir rengi ekleyemeyiz
     const existingColors = normalTiles.map(t => getEffectiveTile(t, okeyTile).color);
     if (existingColors.includes(eff.color)) return false;
-    // Swap ancak tüm 4 renk tamamlandığında geçerli:
-    // yani grupta zaten 3 gerçek taş olmalı ve verilen taş 4. rengi tamamlamalı.
-    const allColors = [Color.RED, Color.YELLOW, Color.BLACK, Color.BLUE];
+
+    // YENİ KURAL: Okeyi almak için grubun tüm 4 rengi tamamlanmalıdır
     const colorsAfterSwap = [...existingColors, eff.color];
+    const allColors = [Color.RED, Color.YELLOW, Color.BLACK, Color.BLUE];
     return allColors.every(c => colorsAfterSwap.includes(c));
   }
 
@@ -434,7 +483,18 @@ export const canSwapOkey = (tile: Tile, set: Combination, okeyTile: { number: nu
     .map(x => x.expectedNum);
 
   return okeyExpectedNumbers.includes(tile.number);
+};
 
+export const canSwapOkeyInPair = (tile: Tile, pair: Tile[], okeyTile: { number: number; color: Color } | null): boolean => {
+  const okeyIdx = pair.findIndex(t => isWildcard(t, okeyTile));
+  if (okeyIdx === -1) return false;
+  const normalTile = pair.find(t => !isWildcard(t, okeyTile));
+  if (!normalTile) return false;
+  
+  const effTile = getEffectiveTile(tile, okeyTile);
+  const effNormal = getEffectiveTile(normalTile, okeyTile);
+  
+  return effTile.number === effNormal.number && effTile.color === effNormal.color;
 };
 
 
@@ -447,8 +507,13 @@ export const canProcessPair = (pair: Tile[], okeyTile: { number: number; color: 
 
 export const isPlayableAnywhere = (tile: Tile, players: Player[], okeyTile: { number: number; color: Color } | null): boolean => {
   for (const player of players) {
-    for (const set of player.openedSets) if (canProcessTile(tile, set, okeyTile)) return true;
-    for (const pair of player.openedPairs) if (canSwapOkey(tile, { tiles: pair, type: "group", score: 0 }, okeyTile)) return true;
+    for (const set of player.openedSets) {
+      if (canProcessTile(tile, set, okeyTile)) return true;
+      if (canSwapOkey(tile, set, okeyTile)) return true;
+    }
+    for (const pair of player.openedPairs) {
+      if (canSwapOkeyInPair(tile, pair, okeyTile)) return true;
+    }
   }
   return false;
 };
@@ -516,15 +581,51 @@ export const aiTakeTurn = (gameState: GameState): Partial<GameState> | null => {
     if (!currentPlayer.hasOpened) {
       currentPlayer.hasOpened = true;
       currentPlayer.openedWithType = 'sets';
-      currentPlayer.openedSets = sets;
+      
+      // Split long sets (6+)
+      const finalSets: Combination[] = [];
+      sets.forEach(s => {
+        if (s.tiles.length >= 6) {
+          let n = s.tiles.length;
+          let offset = 0;
+          while (n > 0) {
+            let size = (n % 3 === 0) ? 3 : 4;
+            const chunk = s.tiles.slice(offset, offset + size);
+            finalSets.push({ tiles: chunk, type: s.type, score: calculateSetScore({ tiles: chunk, type: s.type, score: 0 }, gameState.okeyTile) });
+            offset += size;
+            n -= size;
+          }
+        } else {
+          finalSets.push(s);
+        }
+      });
+
+      currentPlayer.openedSets = finalSets;
       currentPlayer.lastOpenScore = totalScore;
-      currentPlayer.openedThisTurn = true; // elden bitirme tespiti için
+      currentPlayer.openedThisTurn = true;
     } else {
-      currentPlayer.openedSets = [...currentPlayer.openedSets, ...sets];
+      const finalSets: Combination[] = [];
+      sets.forEach(s => {
+        if (s.tiles.length >= 6) {
+          let n = s.tiles.length;
+          let offset = 0;
+          while (n > 0) {
+            let size = (n % 3 === 0) ? 3 : 4;
+            const chunk = s.tiles.slice(offset, offset + size);
+            finalSets.push({ tiles: chunk, type: s.type, score: calculateSetScore({ tiles: chunk, type: s.type, score: 0 }, gameState.okeyTile) });
+            offset += size;
+            n -= size;
+          }
+        } else {
+          finalSets.push(s);
+        }
+      });
+      currentPlayer.openedSets = [...currentPlayer.openedSets, ...finalSets];
     }
 
     sets.forEach(set => {
       set.tiles.forEach(t => {
+        if (!t) return;
         const idx = currentPlayer.hand.findIndex(ht => ht?.id === t.id);
         if (idx !== -1) currentPlayer.hand[idx] = null;
       });
@@ -542,6 +643,7 @@ export const aiTakeTurn = (gameState: GameState): Partial<GameState> | null => {
     }
     pairs.forEach(pair => {
       pair.forEach(t => {
+        if (!t) return;
         const idx = currentPlayer.hand.findIndex(ht => ht?.id === t.id);
         if (idx !== -1) currentPlayer.hand[idx] = null;
       });
@@ -553,80 +655,98 @@ export const aiTakeTurn = (gameState: GameState): Partial<GameState> | null => {
     players.forEach((targetPlayer) => {
       if (currentPlayer.openedWithType !== 'pairs') {
         targetPlayer.openedSets.forEach((set) => {
-          currentPlayer.hand.forEach((tile, hIdx) => {
-            if (tile && canProcessTile(tile, set, gameState.okeyTile)) {
-              set.tiles.push(tile);
-              // Ekleme sonrası sıralama - okey'nin temsil ettiği sayı sabit kalmalı
-              if (set.type === "run") {
-                const nIdx = set.tiles.findIndex(t => !isWildcard(t, gameState.okeyTile));
-                if (nIdx !== -1) {
-                  const anchor = getEffectiveTile(set.tiles[nIdx], gameState.okeyTile).number;
+          let progress = true;
+          while (progress) {
+            progress = false;
+            for (let hIdx = 0; hIdx < currentPlayer.hand.length; hIdx++) {
+              const tile = currentPlayer.hand[hIdx];
+              if (!tile) continue;
 
-                  // Okey'lerin temsil ettiği sayıları beforehand sakla
-                  const okeyRepMap = new Map<string, number>();
-                  set.tiles.forEach((t, i) => {
-                    if (isWildcard(t, gameState.okeyTile)) {
-                      okeyRepMap.set(t.id, anchor + (i - nIdx));
-                    }
-                  });
-
-                  // Normal taşları ve okey'leri say ile sırala
+              // 1. İşleme (Add to end)
+              if (canProcessTile(tile, set, gameState.okeyTile)) {
+                set.tiles.push(tile);
+                // Sıralama
+                if (set.type === "run") {
+                  // Improved re-sorting for AI runs
+                  const startNum = getRunStartNum(set.tiles, gameState.okeyTile);
+                  const normals = set.tiles.filter(t => t && !isWildcard(t, gameState.okeyTile));
+                  const wildcards = set.tiles.filter(t => t && isWildcard(t, gameState.okeyTile));
+                  
                   const sorted: Tile[] = [];
-                  const normal = set.tiles.filter(t => !isWildcard(t, gameState.okeyTile));
-                  const normals = normal.sort((a, b) => getEffectiveTile(a, gameState.okeyTile).number - getEffectiveTile(b, gameState.okeyTile).number);
-
-                  const minNum = Math.min(...normals.map(t => getEffectiveTile(t, gameState.okeyTile).number));
-                  const startNum = minNum - normals.findIndex(t => getEffectiveTile(t, gameState.okeyTile).number === minNum);
-
-                  // Sıralı pozisyonlara taşları yerleştir
+                  let wIdx = 0;
                   for (let i = 0; i < set.tiles.length; i++) {
                     const expectedNum = startNum + i;
-                    // Bu sayıyı temsil eden normal taş var mı?
-                    const normalTile = normals.find(t => getEffectiveTile(t, gameState.okeyTile).number === expectedNum);
+                    const normalTile = normals.find(t => t && getEffectiveTile(t, gameState.okeyTile).number === expectedNum);
                     if (normalTile) {
                       sorted.push(normalTile);
+                    } else if (wIdx < wildcards.length) {
+                      sorted.push(wildcards[wIdx++]);
                     } else {
-                      // Bu sayıyı temsil eden okey var mı?
-                      const okeyTile = Array.from(okeyRepMap.entries()).find(([id, rep]) => rep === expectedNum)?.[0];
-                      if (okeyTile) {
-                        sorted.push(set.tiles.find(t => t.id === okeyTile)!);
-                      }
+                      // Fallback: if we somehow have a gap but no wildcards left, 
+                      // try to just push whatever is left or skip to avoid undefined
+                      const remainingTile = set.tiles.find(rt => rt && !sorted.includes(rt));
+                      if (remainingTile) sorted.push(remainingTile);
                     }
                   }
-
-                  set.tiles = sorted;
+                  // Final safety check: remove any undefined that might have sneaked in
+                  set.tiles = sorted.filter((t): t is Tile => !!t);
+                } else {
+                  const colorOrder = [Color.RED, Color.YELLOW, Color.BLACK, Color.BLUE, Color.JOKER];
+                  set.tiles.sort((a, b) => {
+                    if (isWildcard(a, gameState.okeyTile)) return 1;
+                    if (isWildcard(b, gameState.okeyTile)) return -1;
+                    return colorOrder.indexOf(a.color) - colorOrder.indexOf(b.color);
+                  });
                 }
-              } else if (set.type === "group") {
-                const colorOrder = [Color.RED, Color.YELLOW, Color.BLACK, Color.BLUE, Color.JOKER];
-                set.tiles.sort((a, b) => {
-                  if (isWildcard(a, gameState.okeyTile)) return 1;
-                  if (isWildcard(b, gameState.okeyTile)) return -1;
-                  return colorOrder.indexOf(a.color) - colorOrder.indexOf(b.color);
-                });
+                currentPlayer.hand[hIdx] = null;
+                logs.push(`${currentPlayer.name}, ${targetPlayer.name}'in perine taş işledi.`);
+                progress = true;
+                break;
               }
-              currentPlayer.hand[hIdx] = null;
-              logs.push(`${currentPlayer.name}, ${targetPlayer.name}'in perine taş işledi.`);
-            }
-          });
-        });
-      }
 
-      targetPlayer.openedPairs.forEach((pair) => {
-        currentPlayer.hand.forEach((tile, hIdx) => {
-          if (tile) {
-            const isOkeyInPair = pair.some(t => isWildcard(t, gameState.okeyTile));
-            if (isOkeyInPair) {
-              const normalTile = pair.find(t => !isWildcard(t, gameState.okeyTile));
-              if (normalTile && tile.number === normalTile.number && tile.color === normalTile.color) {
-                const okeyIdx = pair.findIndex(t => isWildcard(t, gameState.okeyTile));
-                const okeyTileInPair = pair[okeyIdx];
-                pair[okeyIdx] = tile;
-                currentPlayer.hand[hIdx] = okeyTileInPair;
-                logs.push(`${currentPlayer.name}, ${targetPlayer.name}'in çiftinden okeyi aldı.`);
+              // 2. Okey Değiştirme (Swap Okey)
+              if (canSwapOkey(tile, set, gameState.okeyTile)) {
+                // Hangi okey ile yer değiştireceğini bul
+                let okeyIdx = -1;
+                if (set.type === "run") {
+                  const nIdx = set.tiles.findIndex(t => !isWildcard(t, gameState.okeyTile));
+                  const anchorNum = getEffectiveTile(set.tiles[nIdx], gameState.okeyTile).number;
+                  okeyIdx = set.tiles.findIndex((t, idx) => isWildcard(t, gameState.okeyTile) && (anchorNum + (idx - nIdx)) === tile.number);
+                } else {
+                  okeyIdx = set.tiles.findIndex(t => isWildcard(t, gameState.okeyTile));
+                }
+
+                if (okeyIdx !== -1) {
+                  const swappedOkey = set.tiles[okeyIdx];
+                  set.tiles[okeyIdx] = tile;
+                  currentPlayer.hand[hIdx] = swappedOkey; // Okeyi eline al
+                  logs.push(`${currentPlayer.name}, ${targetPlayer.name}'in perinden okeyi aldı.`);
+                  progress = true;
+                  break;
+                }
               }
             }
           }
         });
+      }
+
+      targetPlayer.openedPairs.forEach((pair) => {
+        let progress = true;
+        while (progress) {
+          progress = false;
+          for (let hIdx = 0; hIdx < currentPlayer.hand.length; hIdx++) {
+            const tile = currentPlayer.hand[hIdx];
+            if (tile && canSwapOkeyInPair(tile, pair, gameState.okeyTile)) {
+              const okeyIdx = pair.findIndex(t => isWildcard(t, gameState.okeyTile));
+              const okeyTileInPair = pair[okeyIdx];
+              pair[okeyIdx] = tile;
+              currentPlayer.hand[hIdx] = okeyTileInPair;
+              logs.push(`${currentPlayer.name}, ${targetPlayer.name}'in çiftinden okeyi aldı.`);
+              progress = true;
+              break;
+            }
+          }
+        }
       });
     });
   }
@@ -722,13 +842,19 @@ export const aiTakeTurn = (gameState: GameState): Partial<GameState> | null => {
     };
   }
 
+  const isDeckEmpty = deck.length === 0;
+  const hasAnyOpened = players.some(p => p.hasOpened);
+
   return {
     players,
     deck,
     discardPile,
-    logs,
+    logs: isDeckEmpty 
+      ? [...logs, hasAnyOpened ? "Deste bitti. Oyun sona erdi." : "Deste bitti. Kimse açmadı — herkes 202 ceza alır!"] 
+      : logs,
     currentPlayerIndex: (gameState.currentPlayerIndex + 1) % 4,
-    phase: GamePhase.DRAWING,
+    phase: isDeckEmpty ? GamePhase.FINISHED : GamePhase.DRAWING,
+    noOneOpened: isDeckEmpty ? !hasAnyOpened : gameState.noOneOpened,
     currentOpenScore: Math.max(gameState.currentOpenScore, currentPlayer.hasOpened && currentPlayer.openedWithType === 'sets' ? currentPlayer.lastOpenScore : 0),
     currentOpenPairs: Math.max(gameState.currentOpenPairs, currentPlayer.hasOpened && currentPlayer.openedWithType === 'pairs' ? currentPlayer.lastOpenScore : 0),
     hasDoubleOpen: gameState.hasDoubleOpen || players.some(p => p.openedWithType === 'pairs' && p.hasOpened),

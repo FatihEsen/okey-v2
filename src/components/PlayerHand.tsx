@@ -440,7 +440,7 @@ export const PlayerHand = ({
               {player.hasOpened ? "KALAN" : "PER"}
             </span>
             <span className="text-xs font-black text-amber-400">
-              {player.hasOpened ? remainingTotal : arrangedTotal}
+              {Math.floor(player.hasOpened ? remainingTotal : arrangedTotal)}
             </span>
             {player.openedWithPairs && (
               <span className="text-[7px] font-black text-purple-400 bg-purple-900/40 px-1 rounded">
