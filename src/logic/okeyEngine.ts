@@ -90,6 +90,10 @@ export const calculateDiscardPenalty = (tile: Tile, gameState: GameState, player
 };
 
 export const calculateSetScore = (set: Combination, okeyTile: { number: number; color: Color } | null): number => {
+    // Önce setin geçerliliğini teyit et
+    if (set.type === "group" && !isValidGroup(set.tiles, okeyTile)) return 0;
+    if (set.type === "run" && !isValidRun(set.tiles, okeyTile)) return 0;
+
     let score = 0;
     if (set.type === "group") {
         const normalTile = set.tiles.find(t => !isWildcard(t, okeyTile));
@@ -98,25 +102,18 @@ export const calculateSetScore = (set: Combination, okeyTile: { number: number; 
         let val = effective.number;
         score = val * set.tiles.length;
     } else {
-        const normalTiles = set.tiles.filter(t => !isWildcard(t, okeyTile));
-        if (normalTiles.length === 0) return 0;
-        const effTiles = normalTiles.map(t => getEffectiveTile(t, okeyTile));
-        const nums = effTiles.map(t => t.number);
-        
         const startNum = getRunStartNum(set.tiles, okeyTile);
-        
         let sum = 0;
         for (let i = 0; i < set.tiles.length; i++) {
             sum += (startNum + i);
         }
         score = sum;
-        score += 0.01; // Seri (run) perler, aynı puandaki gruplara göre tercih edilsin
+        score += 0.01; 
     }
     
-    // 2 okeyi aynı perde kullanmamaya teşvik etmek için küçük bir ceza
     const okeyCount = set.tiles.filter(t => isWildcard(t, okeyTile)).length;
     if (okeyCount > 1) {
-        score -= 0.1; // Skor bazlı tercihlerde çok küçük bir azaltma split'i tetikler
+        score -= 0.1; 
     }
     return score;
 };
@@ -149,25 +146,26 @@ export const isValidRun = (tiles: Tile[], okeyTile: { number: number; color: Col
   if (tiles.length < 3) return false;
   const normalTiles = tiles.filter(t => !isWildcard(t, okeyTile));
   if (normalTiles.length === 0) return true;
+  
   const effNormal = normalTiles.map(t => getEffectiveTile(t, okeyTile));
   const color = effNormal[0].color;
   if (effNormal.some(t => t.color !== color)) return false;
-  const nums = effNormal.map(t => t.number);
-  if (new Set(nums).size !== nums.length) return false;
 
-  const min = Math.min(...nums);
-  const max = Math.max(...nums);
-  
-  // Lineerlik kontrolü
-  if ((max - min + 1) > tiles.length) return false;
-
+  // Sıralama doğrulaması ve duplicate kontrolü
   const startNum = getRunStartNum(tiles, okeyTile);
   const endNum = startNum + tiles.length - 1;
 
-  // Tüm normal taşların bu aralıkta olduğunu doğrula
-  if (min < startNum || max > endNum) return false;
+  if (startNum < 1 || endNum > 13) return false;
 
-  return startNum >= 1 && endNum <= 13;
+  for (let i = 0; i < tiles.length; i++) {
+    const tile = tiles[i];
+    if (isWildcard(tile, okeyTile)) continue;
+    
+    const eff = getEffectiveTile(tile, okeyTile);
+    if (eff.number !== startNum + i) return false;
+  }
+
+  return true;
 };
 
 const getCombinations = <T>(array: T[], k: number): T[][] => {
@@ -217,8 +215,9 @@ export const findBestSets = (hand: (Tile | null)[], okeyTile: { number: number; 
         for (const tCombo of tileCombos) {
           for (const okeys of okeyCombos) {
             const setTiles = [...tCombo, ...okeys];
+            if (!isValidGroup(setTiles, okeyTile)) continue;
             const score = calculateSetScore({ tiles: setTiles, type: "group", score: 0 }, okeyTile);
-            allCandidates.push({ tiles: setTiles, type: "group", score });
+            if (score > 0) allCandidates.push({ tiles: setTiles, type: "group", score });
           }
         }
       }
@@ -258,8 +257,9 @@ export const findBestSets = (hand: (Tile | null)[], okeyTile: { number: number; 
               if (slots[i].length > 0) finalTiles[i] = tCombo[tIdx++];
               else finalTiles[i] = okeys[oIdx++];
             }
+            if (!isValidRun(finalTiles, okeyTile)) continue;
             const score = calculateSetScore({ tiles: finalTiles, type: "run", score: 0 }, okeyTile);
-            allCandidates.push({ tiles: finalTiles, type: "run", score });
+            if (score > 0) allCandidates.push({ tiles: finalTiles, type: "run", score });
           }
         }
       }
@@ -424,25 +424,36 @@ export const calculatePenalty = (player: Player, isHandFinished: boolean, gameSt
 };
 
 export const canProcessTile = (tile: Tile, set: Combination, okeyTile: { number: number; color: Color } | null): boolean => {
+  const newTiles = [...set.tiles, tile];
   if (set.type === "group") {
-    return isValidGroup([...set.tiles, tile], okeyTile);
+    return isValidGroup(newTiles, okeyTile);
   }
-
-  // Run: Uçlara ekleme kontrolü
+  
+  // Seri için hem uçlara ekleme kontrolü hem de genel geçerlilik kontrolü
   const startNum = getRunStartNum(set.tiles, okeyTile);
   const endNum = startNum + set.tiles.length - 1;
 
+  const effectiveTile = getEffectiveTile(tile, okeyTile);
+  
+  // Okey ise uçlardan birine ekleyebilmeli
   if (isWildcard(tile, okeyTile)) {
-    // Eklenecek taş Okey ise 1 ve 13 sınırlarına dikkat et
-    return startNum > 1 || endNum < 13;
+    if (startNum <= 1 && endNum >= 13) return false;
+  } else {
+    // Normal taş ise rengi tutmalı ve tam uca gelmeli
+    const runColor = getEffectiveTile(set.tiles.find(t => !isWildcard(t, okeyTile))!, okeyTile).color;
+    if (effectiveTile.color !== runColor) return false;
+    if (effectiveTile.number !== startNum - 1 && effectiveTile.number !== endNum + 1) return false;
   }
 
-  const effectiveTile = getEffectiveTile(tile, okeyTile);
-  const runColor = getEffectiveTile(set.tiles.find(t => !isWildcard(t, okeyTile))!, okeyTile).color;
-  if (effectiveTile.color !== runColor) return false;
+  // Son olarak oluşan yeni setin geçerli olduğunu teyit et (duplicate vb. için)
+  // Not: startNum - 1 durumunda yeni startNum bir azalacağı için isValidRun doğru çalışır.
+  // Ancak push her zaman sona eklediği için, eğer başa ekleniyorsa sorting gerekebilir.
+  // canProcessTile sadece "eklenebilir mi" sorusuna cevap verir.
   
-  // Sadece tam uca eklenmesine izin ver
-  return effectiveTile.number === startNum - 1 || effectiveTile.number === endNum + 1;
+  if (effectiveTile.number === startNum - 1) {
+      return isValidRun([tile, ...set.tiles], okeyTile);
+  }
+  return isValidRun([...set.tiles, tile], okeyTile);
 };
 
 export const canSwapOkey = (tile: Tile, set: Combination, okeyTile: { number: number; color: Color } | null): boolean => {

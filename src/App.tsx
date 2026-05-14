@@ -53,11 +53,15 @@ import {
   determineOkey, 
   COLORS, 
   isRealOkey,
+  isWildcard,
   getEffectiveTile,
   findBestSets, 
   findPairs,
   aiTakeTurn,
   canProcessTile,
+  getRunStartNum,
+  isValidRun,
+  isValidGroup,
   canSwapOkey,
   canProcessPair,
   checkWin,
@@ -68,9 +72,6 @@ import {
   getScoreExplanation,
   sortBySets,
   sortByPairs,
-  isWildcard,
-  isValidRun,
-  isValidGroup,
   isPlayableAnywhere
 } from "./logic/okeyEngine";
 import { TileComponent, SortableTile } from "./components/TileComponent";
@@ -999,7 +1000,14 @@ export default function App() {
           const nIdx = targetSet.tiles.findIndex(t => !isWildcard(t, gameState.okeyTile));
           if (nIdx !== -1) {
             const anchor = getEffectiveTile(targetSet.tiles[nIdx], gameState.okeyTile).number;
-            const withRep = targetSet.tiles.map((t, i) => ({ tile: t, rep: anchor + (i - nIdx) }));
+            const startNum = getRunStartNum(targetSet.tiles, gameState.okeyTile);
+            const withRep = targetSet.tiles.map((t, i) => {
+                if (isWildcard(t, gameState.okeyTile)) {
+                    // Okey'in bu perdeki pozisyonunu bul
+                    return { tile: t, rep: startNum + i };
+                }
+                return { tile: t, rep: getEffectiveTile(t, gameState.okeyTile).number };
+            });
             withRep.sort((a, b) => a.rep - b.rep);
             targetSet.tiles = withRep.map(x => x.tile);
           }
@@ -1041,9 +1049,10 @@ export default function App() {
             const anchorNumber = getEffectiveTile(targetSet.tiles[normalIdx], gameState.okeyTile).number;
             
             // Mevcut taşlara temsil edilen numaralarını (representedNum) atayalım
+            const startNum = getRunStartNum(targetSet.tiles, gameState.okeyTile);
             const tilesWithRep = targetSet.tiles.map((t, idx) => ({
               tile: t,
-              rep: anchorNumber + (idx - normalIdx)
+              rep: startNum + idx
             }));
             
             let addedRep = getEffectiveTile(addedTile, gameState.okeyTile).number;
