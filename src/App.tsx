@@ -15,8 +15,13 @@ import {
   X,
   Users,
   Wifi,
-  UserPlus
+  UserPlus,
+  Volume2,
+  VolumeX,
+  BarChart2,
 } from "lucide-react";
+import { useSound } from "./hooks/useSound";
+import { useStats } from "./hooks/useStats";
 import { io, Socket } from "socket.io-client";
 import {
   DndContext,
@@ -116,7 +121,11 @@ export default function App() {
   const [totalRounds, setTotalRounds] = useState<number>(1);
   const [showRoundPicker, setShowRoundPicker] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: "error" | "warning" | "info" } | null>(null);
-  
+  const [dealingKey, setDealingKey] = useState(0);
+
+  const { sounds, enabled: soundEnabled, toggleSound } = useSound();
+  const { stats, recordGame, winRate } = useStats();
+
   // Multiplayer states
   const [lobbyMode, setLobbyMode] = useState<"menu" | "offline" | "online" | "room">("menu");
   const [playerName, setPlayerName] = useState<string>("Oyuncu" + Math.floor(Math.random() * 1000));
@@ -343,6 +352,7 @@ export default function App() {
       cumulativeScores: {},
     });
     setSelectedTiles([]);
+    setDealingKey(k => k + 1);
   }, [gameMode]);
 
   // Yeni El: kümülatif skoru koru, taşları yeniden dağıt
@@ -420,6 +430,7 @@ export default function App() {
       cumulativeScores: newCumulative,
     });
     setSelectedTiles([]);
+    setDealingKey(k => k + 1);
   }, [gameState]);
 
 
@@ -438,6 +449,16 @@ export default function App() {
       return () => clearTimeout(timer);
     }
   }, [gameState, isOnlineGame, myPlayerIndex]);
+
+  // Record stats when a single-player game finishes
+  useEffect(() => {
+    if (!gameState || gameState.phase !== GamePhase.FINISHED || isOnlineGame) return;
+    const humanPlayer = gameState.players[0];
+    const playerWon = gameState.winnerId === humanPlayer.id;
+    const cumScore = gameState.cumulativeScores[humanPlayer.id] ?? 0;
+    recordGame(playerWon, cumScore);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameState?.phase, gameState?.winnerId]);
 
   const handleTileClick = (tile: Tile) => {
     if (gameState?.phase === GamePhase.PLAYING || gameState?.phase === GamePhase.DISCARDING) {
@@ -507,6 +528,7 @@ export default function App() {
     };
     newState.turnSnapshot = JSON.stringify({ ...newState, turnSnapshot: null });
     updateGameState(newState);
+    sounds.draw();
   };
 
   const drawFromDiscard = () => {
@@ -543,6 +565,7 @@ export default function App() {
     };
     newState.turnSnapshot = JSON.stringify({ ...newState, turnSnapshot: null });
     updateGameState(newState);
+    sounds.draw();
   };
 
   const discardTile = (tileToDiscard?: Tile) => {
@@ -653,6 +676,13 @@ export default function App() {
       noOneOpened: newNoOneOpened,
     });
     setSelectedTiles([]);
+    if (isWin) {
+      sounds.win();
+    } else if (penaltyScore > 0) {
+      sounds.penalty();
+    } else {
+      sounds.discard();
+    }
   };
 
   const tryToOpen = () => {
@@ -754,6 +784,7 @@ export default function App() {
         logs: [...gameState.logs, ...openLogs]
       });
       setSelectedTiles([]);
+      sounds.open();
     } else {
       if (totalScore < minScore) {
         showToast(`Açmak için en az ${minScore} puan gerekiyor. Şu an: ${totalScore}`, "error");
@@ -1279,6 +1310,13 @@ export default function App() {
     return (
       <div className={`min-h-screen flex items-center justify-center p-6 transition-colors duration-300 ${isDarkMode ? "bg-slate-950" : "bg-slate-100"}`}>
         <div className="absolute top-6 right-6 flex gap-2">
+          <button
+            onClick={toggleSound}
+            className={`p-3 rounded-full transition-all shadow-lg ${isDarkMode ? "bg-slate-800 hover:bg-slate-700 border border-slate-700" : "bg-white hover:bg-slate-50 border border-slate-200"} ${soundEnabled ? "text-blue-400" : "text-slate-500"}`}
+            title={soundEnabled ? "Sesi Kapat" : "Sesi Aç"}
+          >
+            {soundEnabled ? <Volume2 size={22} /> : <VolumeX size={22} />}
+          </button>
           <button 
             onClick={() => setIsDarkMode(!isDarkMode)}
             className={`p-3 rounded-full transition-all shadow-lg ${isDarkMode ? "bg-slate-800 text-amber-400 hover:bg-slate-700 border border-slate-700" : "bg-white text-slate-600 hover:bg-slate-50 border border-slate-200"}`}
@@ -1300,8 +1338,35 @@ export default function App() {
                 </div>
               </div>
               <h1 className={`text-4xl font-black mb-2 ${isDarkMode ? "text-white" : "text-slate-900"}`}>Okey 101</h1>
-              <p className={`text-sm mb-8 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>Nasıl oynamak istersiniz?</p>
-              
+              <p className={`text-sm mb-6 ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>Nasıl oynamak istersiniz?</p>
+
+              {/* Stats bar */}
+              {stats.totalGames > 0 && (
+                <div className={`flex items-center justify-center gap-4 mb-6 px-5 py-3 rounded-2xl border ${isDarkMode ? "bg-slate-800/70 border-slate-700" : "bg-slate-50 border-slate-200"}`}>
+                  <BarChart2 size={14} className="text-blue-500 shrink-0" />
+                  <div className="flex gap-5 text-center">
+                    <div>
+                      <p className={`text-[11px] font-black ${isDarkMode ? "text-slate-100" : "text-slate-800"}`}>{stats.totalGames}</p>
+                      <p className="text-[9px] text-slate-400 uppercase font-bold">Oyun</p>
+                    </div>
+                    <div>
+                      <p className={`text-[11px] font-black ${isDarkMode ? "text-slate-100" : "text-slate-800"}`}>{winRate}%</p>
+                      <p className="text-[9px] text-slate-400 uppercase font-bold">Kazanma</p>
+                    </div>
+                    <div>
+                      <p className={`text-[11px] font-black ${isDarkMode ? "text-slate-100" : "text-slate-800"}`}>{stats.wins}</p>
+                      <p className="text-[9px] text-slate-400 uppercase font-bold">Galibiyet</p>
+                    </div>
+                    {stats.bestScore !== null && (
+                      <div>
+                        <p className="text-[11px] font-black text-emerald-500">{stats.bestScore}</p>
+                        <p className="text-[9px] text-slate-400 uppercase font-bold">En İyi</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <div className="flex flex-col gap-4">
                 <button 
                   onClick={() => setLobbyMode("offline")}
@@ -1417,6 +1482,13 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-4">
+            <button
+              onClick={toggleSound}
+              className={`p-2 rounded-full transition-colors ${isDarkMode ? "bg-slate-800 hover:bg-slate-700" : "bg-slate-100 hover:bg-slate-200"} ${soundEnabled ? "text-blue-400" : "text-slate-400"}`}
+              title={soundEnabled ? "Sesi Kapat" : "Sesi Aç"}
+            >
+              {soundEnabled ? <Volume2 size={20} /> : <VolumeX size={20} />}
+            </button>
             <button 
               onClick={() => setIsDarkMode(!isDarkMode)}
               className={`p-2 rounded-full transition-colors ${isDarkMode ? "bg-slate-800 text-amber-400 hover:bg-slate-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
@@ -1600,6 +1672,7 @@ export default function App() {
                 onOpenPairs={tryToOpenPairs}
                 onUndoOpen={undoAllOpens}
                 openedSets={gameState.players[myPlayerIndex].openedSets}
+                dealingKey={dealingKey}
               />
             </div>
           </div>

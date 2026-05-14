@@ -28,6 +28,7 @@ interface RackProps {
   onReorder: (newHand: (Tile | null)[]) => void;
   disabled: boolean;
   highlightedIds?: Set<string>;
+  dealingKey?: number;
 }
 
 const Rack: React.FC<RackProps> = ({
@@ -38,6 +39,7 @@ const Rack: React.FC<RackProps> = ({
   onReorder,
   disabled,
   highlightedIds,
+  dealingKey,
 }) => {
   // Sürükleme state'i
   const [dragState, setDragState] = useState<{
@@ -289,10 +291,13 @@ const Rack: React.FC<RackProps> = ({
           >
             {displayTile ? (
               <div
+                key={dealingKey !== undefined ? `${dealingKey}-${slotIdx}` : slotIdx}
+                className={dealingKey !== undefined ? "tile-deal-in" : undefined}
                 style={{
                   opacity: isGhost ? 0.3 : isPreview ? 0.7 : 1,
                   transform: isSelected && !dragState?.started ? "translateY(-6px)" : "none",
                   transition: "transform 0.1s, opacity 0.1s",
+                  animationDelay: dealingKey !== undefined ? `${slotIdx * 18}ms` : undefined,
                   outline: isHoveredTarget && dragState?.started
                     ? "2px solid #3b82f6"
                     : isHighlighted && !isSelected
@@ -344,6 +349,7 @@ export const PlayerHand = ({
   onOpenPairs,
   onUndoOpen,
   openedSets,
+  dealingKey,
 }: {
   player: Player;
   okeyTile: { number: number; color: Color } | null;
@@ -357,6 +363,7 @@ export const PlayerHand = ({
   onOpenPairs: () => void;
   onUndoOpen: () => void;
   openedSets: TileSet[];
+  dealingKey?: number;
 }) => {
   // Seçim: tıklama veya shift+tıklama
   const handleSelect = useCallback(
@@ -450,15 +457,20 @@ export const PlayerHand = ({
           </div>
         </div>
 
-        {/* Slot rack */}
-        <Rack
-          hand={player.hand}
-          okeyTile={okeyTile}
-          selectedIds={selectedTiles}
-          onSelect={handleSelect}
-          onReorder={onHandReorder}
-          disabled={player.isAI}
-        />
+        {/* Slot rack — scrollable on mobile */}
+        <div className="overflow-x-auto">
+          <div style={{ minWidth: "540px" }}>
+            <Rack
+              hand={player.hand}
+              okeyTile={okeyTile}
+              selectedIds={selectedTiles}
+              onSelect={handleSelect}
+              onReorder={onHandReorder}
+              disabled={player.isAI}
+              dealingKey={!player.isAI ? dealingKey : undefined}
+            />
+          </div>
+        </div>
       </div>
 
       {/* Action buttons */}
