@@ -143,7 +143,9 @@ export const findBestSets = (hand: (Tile | null)[], okeyTile: { number: number; 
   const tiles = hand.filter((t): t is Tile => t !== null);
   const allCandidates: Combination[] = [];
   const wildcards = tiles.filter(t => isWildcard(t, okeyTile));
+  const totalTilesInHand = tiles.length;
 
+  // --- Grup (group) adayları ---
   for (let num = 1; num <= 13; num++) {
     const groupCandidates = tiles.filter(t => !isWildcard(t, okeyTile) && getEffectiveTile(t, okeyTile).number === num);
     const uniqueColors: Tile[] = [];
@@ -156,13 +158,12 @@ export const findBestSets = (hand: (Tile | null)[], okeyTile: { number: number; 
     for (let len = 3; len <= 4; len++) {
       const usedNormal = uniqueColors.slice(0, Math.min(uniqueColors.length, len));
       const neededWildcards = len - usedNormal.length;
-      // Her perde en fazla 1 okey kullanabilir — iki okey varsa ayrı perdelere dağıt
+      // Her perde en fazla 1 okey kullanabilir
       if (neededWildcards > 1) continue;
       if (neededWildcards === 0 && usedNormal.length === len) {
         const score = calculateSetScore({ tiles: usedNormal, type: "group", score: 0 }, okeyTile);
         allCandidates.push({ tiles: usedNormal, type: "group", score });
       } else if (neededWildcards === 1 && wildcards.length >= 1) {
-        // Her okey taşı için ayrı aday üret — backtrack hangi okey'i nereye koyacağını seçer
         for (const wc of wildcards) {
           const setTiles = [...usedNormal, wc];
           const score = calculateSetScore({ tiles: setTiles, type: "group", score: 0 }, okeyTile);
@@ -172,6 +173,7 @@ export const findBestSets = (hand: (Tile | null)[], okeyTile: { number: number; 
     }
   }
 
+  // --- Seri (run) adayları ---
   for (const color of COLORS) {
     const colorTiles = tiles.filter(t => !isWildcard(t, okeyTile) && getEffectiveTile(t, okeyTile).color === color)
       .sort((a, b) => getEffectiveTile(a, okeyTile).number - getEffectiveTile(b, okeyTile).number);
@@ -180,7 +182,6 @@ export const findBestSets = (hand: (Tile | null)[], okeyTile: { number: number; 
       for (let startNum = 1; startNum <= 13 - len + 1; startNum++) {
         const runNumbers = Array.from({ length: len }, (_, i) => startNum + i);
 
-        // Önce normal taşlarla iskeleti doldur, okey gereken pozisyonları işaretle
         const skeleton: (Tile | null)[] = [];
         let wildSlotsNeeded = 0;
 
@@ -197,7 +198,7 @@ export const findBestSets = (hand: (Tile | null)[], okeyTile: { number: number; 
           }
         }
 
-        // Her perde en fazla 1 okey — iki slot gerekiyorsa bu adayı atla
+        // Her perde en fazla 1 okey
         if (wildSlotsNeeded > 1) continue;
 
         if (wildSlotsNeeded === 0) {
@@ -205,7 +206,6 @@ export const findBestSets = (hand: (Tile | null)[], okeyTile: { number: number; 
           const score = calculateSetScore({ tiles: runTiles, type: "run", score: 0 }, okeyTile);
           allCandidates.push({ tiles: runTiles, type: "run", score });
         } else if (wildcards.length >= 1) {
-          // Her okey taşı için ayrı aday üret
           for (const wc of wildcards) {
             const currentRun = skeleton.map(t => t ?? wc) as Tile[];
             const score = calculateSetScore({ tiles: currentRun, type: "run", score: 0 }, okeyTile);
@@ -216,27 +216,76 @@ export const findBestSets = (hand: (Tile | null)[], okeyTile: { number: number; 
     }
   }
 
-  allCandidates.sort((a, b) => b.score - a.score);
-  let bestResult: Combination[] = [];
-  let bestScore = 0;
-  const usedIds = new Set<string>();
-  const suffixMax = new Array(allCandidates.length + 1).fill(0);
-  for (let i = allCandidates.length - 1; i >= 0; i--) suffixMax[i] = suffixMax[i + 1] + allCandidates[i].score;
+  // Sıralama: okeysiz setler önce (doğal setler daha hızlı denenir → daha iyi budama),
+  // eşit okey sayısında serileri gruplara tercih et, sonra skora göre azalan.
+  allCandidates.sort((a, b) => {
+    const aOkeys = a.tiles.filter(t => isWildcard(t, okeyTile)).length;
+    const bOkeys = b.tiles.filter(t => isWildcard(t, okeyTile)).length;
+    if (aOkeys !== bOkeys) return aOkeys - bOkeys;            // okey az → önce
+    if (a.type !== b.type) return a.type === 'run' ? -1 : 1; // seri → önce
+    return b.score - a.score;                                  // yüksek skor → önce
+  });
 
-  function backtrack(idx: number, current: Combination[], score: number) {
-    if (score > bestScore) { bestScore = score; bestResult = [...current]; }
-    if (idx >= allCandidates.length || score + suffixMax[idx] <= bestScore) return;
+  // Suffix max skor (budama için üst sınır)
+  const suffixMaxScore = new Array(allCandidates.length + 1).fill(0);
+  for (let i = allCandidates.length - 1; i >= 0; i--) {
+    suffixMaxScore[i] = suffixMaxScore[i + 1] + allCandidates[i].score;
+  }
+
+  let bestResult: Combination[] = [];
+  let bestComposite = -1;
+  const usedIds = new Set<string>();
+
+  /**
+   * Çok boyutlu hedef fonksiyonu (öncelik sırasına göre):
+   *   1. Kaç taş set içinde → × 10000 (mümkün olan en fazla taşı set yap)
+   *   2. Toplam set skoru    → +score
+   *   3. Kullanılan okey sayısı → -200 × okeyCount (doğal setleri tercih et)
+   *   4. Seri sayısı         → +1 × runs (serileri gruplara tercih et)
+   *
+   * Bu sayede:
+   *  - Okey kullanmadan 10-11-12 yapmak, 11-12-okey(=13) yapmaktan daha avantajlı
+   *    (eğer okey başka bir seti kapatabiliyorsa her iki çözüm aynı taşı kapatır
+   *    ama doğal çözüm okeyden ceza almaz → okey ikinci bir set için serbest kalır)
+   *  - İki okey varsa iki ayrı perde kullanmak daha fazla taş kapatır → tercih edilir
+   */
+  function backtrack(
+    idx: number,
+    current: Combination[],
+    coveredTiles: number,
+    totalScore: number,
+    okeysUsed: number,
+    runs: number,
+  ) {
+    const composite = coveredTiles * 10000 + totalScore - okeysUsed * 200 + runs;
+    if (composite > bestComposite) { bestComposite = composite; bestResult = [...current]; }
+    if (idx >= allCandidates.length) return;
+
+    // Üst sınır budaması: kalan taşların hepsini set yapabilsek bile geçemeyeceğimiz maksimumu hesapla
+    const maxAdditionalTiles = totalTilesInHand - coveredTiles;
+    const upperBound = maxAdditionalTiles * 10000 + suffixMaxScore[idx] + (allCandidates.length - idx);
+    if (composite + upperBound <= bestComposite) return;
+
     for (let i = idx; i < allCandidates.length; i++) {
       const candidate = allCandidates[i];
       if (candidate.tiles.some(t => usedIds.has(t.id))) continue;
+      const candOkeys = candidate.tiles.filter(t => isWildcard(t, okeyTile)).length;
       candidate.tiles.forEach(t => usedIds.add(t.id));
       current.push(candidate);
-      backtrack(i + 1, current, score + candidate.score);
+      backtrack(
+        i + 1,
+        current,
+        coveredTiles + candidate.tiles.length,
+        totalScore + candidate.score,
+        okeysUsed + candOkeys,
+        runs + (candidate.type === 'run' ? 1 : 0),
+      );
       current.pop();
       candidate.tiles.forEach(t => usedIds.delete(t.id));
     }
   }
-  backtrack(0, [], 0);
+
+  backtrack(0, [], 0, 0, 0, 0);
   return bestResult;
 };
 
