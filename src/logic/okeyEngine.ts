@@ -216,6 +216,41 @@ export const findBestSets = (hand: (Tile | null)[], okeyTile: { number: number; 
     }
   }
 
+  // Aynı (sayı, renk) çiftine sahip birden fazla taş varsa, her kopyayı kullanan
+  // aday varyantları üret. Aksi hâlde örn. iki kırmızı-5 olduğunda 3-4-5 adayı
+  // ile 5-6-7 adayı aynı tile.id'yi paylaşır → backtrack birini seçince diğeri
+  // engellenir.
+  const baseCount = allCandidates.length;
+  for (let ci = 0; ci < baseCount; ci++) {
+    const candidate = allCandidates[ci];
+    for (let pos = 0; pos < candidate.tiles.length; pos++) {
+      const tile = candidate.tiles[pos];
+      if (isWildcard(tile, okeyTile)) continue;
+      const effTile = getEffectiveTile(tile, okeyTile);
+      // Aynı sayı+renk farklı ID'li başka bir taş var mı?
+      const dup = tiles.find(t =>
+        t.id !== tile.id &&
+        !isWildcard(t, okeyTile) &&
+        getEffectiveTile(t, okeyTile).number === effTile.number &&
+        getEffectiveTile(t, okeyTile).color === effTile.color &&
+        !candidate.tiles.some(ct => ct.id === t.id)
+      );
+      if (dup) {
+        const newTiles = [...candidate.tiles];
+        newTiles[pos] = dup;
+        // Aday daha önce eklenmemişse ekle
+        const alreadyExists = allCandidates.some(c =>
+          c.type === candidate.type &&
+          c.tiles.length === newTiles.length &&
+          newTiles.every((t, i) => c.tiles[i]?.id === t.id)
+        );
+        if (!alreadyExists) {
+          allCandidates.push({ tiles: newTiles, type: candidate.type, score: candidate.score });
+        }
+      }
+    }
+  }
+
   // Sıralama: okeysiz setler önce (doğal setler daha hızlı denenir → daha iyi budama),
   // eşit okey sayısında serileri gruplara tercih et, sonra skora göre azalan.
   allCandidates.sort((a, b) => {
@@ -326,21 +361,28 @@ export const findPairs = (hand: (Tile | null)[], okeyTile: { number: number; col
   // 3) Joker eşleme: joker SADECE okey'nin eşi olan taş ile çift oluşturabilir
   // Okey = beyaz 5 ise, joker + beyaz 5 = çift
   if (okeyTile && fakeOkeys.length > 0) {
-    // Okey'nin eşi olan taş (aynı sayı ve renk)
     const okeyPartner = normalTiles.find(t => {
       const eff = getEffectiveTile(t, okeyTile);
       return eff.number === okeyTile.number && eff.color === okeyTile.color && !usedIds.has(t.id);
     });
 
-    // Joker'leri okey'nin eşi ile eşle
     for (const joker of fakeOkeys) {
+      if (usedIds.has(joker.id)) continue;
       if (okeyPartner && !usedIds.has(okeyPartner.id)) {
         pairs.push([okeyPartner, joker]);
         usedIds.add(okeyPartner.id);
         usedIds.add(joker.id);
-        break; // Her joker için bir eş bulabilir
       }
     }
+  }
+
+  // 4) İki sahte okey (joker) kendi aralarında çift oluşturabilir
+  // Her ikisi de okeyi temsil eder → iki özdeş taş = geçerli çift
+  const unusedFakeOkeys = fakeOkeys.filter(t => !usedIds.has(t.id));
+  if (unusedFakeOkeys.length >= 2) {
+    pairs.push([unusedFakeOkeys[0], unusedFakeOkeys[1]]);
+    usedIds.add(unusedFakeOkeys[0].id);
+    usedIds.add(unusedFakeOkeys[1].id);
   }
 
   return pairs;
@@ -496,7 +538,11 @@ export const canProcessPair = (pair: Tile[], okeyTile: { number: number; color: 
 
 export const isPlayableAnywhere = (tile: Tile, players: Player[], okeyTile: { number: number; color: Color } | null): boolean => {
   for (const player of players) {
-    for (const set of player.openedSets) if (canProcessTile(tile, set, okeyTile)) return true;
+    for (const set of player.openedSets) {
+      if (canProcessTile(tile, set, okeyTile)) return true;
+      // Açık setteki okeyi taşla değiştirilebilir mi? (işler taş kontrolü)
+      if (canSwapOkey(tile, set, okeyTile)) return true;
+    }
     for (const pair of player.openedPairs) if (canSwapOkey(tile, { tiles: pair, type: "group", score: 0 }, okeyTile)) return true;
   }
   return false;
