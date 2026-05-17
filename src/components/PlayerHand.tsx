@@ -457,8 +457,9 @@ export const PlayerHand = ({
           </div>
         </div>
 
-        {/* Slot rack — scrollable on mobile */}
-        <div className="overflow-x-auto">
+        {/* Slot rack — scrollable on mobile; pt-3/-mt-3 prevents overflow-x-auto from
+            clipping tiles that lift upward (translateY) when selected */}
+        <div className="overflow-x-auto pt-3 -mt-3">
           <div style={{ minWidth: "540px" }}>
             <Rack
               hand={player.hand}
