@@ -977,7 +977,7 @@ export default function App() {
     }
   };
 
-  const processTile = (targetPlayerId: string, setIdx: number, type: "set" | "pair") => {
+  const processTile = (targetPlayerId: string, setIdx: number, type: "set" | "pair", tileIdx?: number) => {
     if (!gameState || (gameState.phase !== GamePhase.PLAYING && gameState.phase !== GamePhase.DISCARDING) || selectedTiles.length === 0) return;
     const player = gameState.players[gameState.currentPlayerIndex];
     if (!player.hasOpened) {
@@ -1044,14 +1044,11 @@ export default function App() {
       }
 
       if (canProcessTile(tile, targetSet, gameState.okeyTile)) {
+        // tileIdx === 0 → en soldaki taşa tıklandı → sola ekle
+        const isLeftInsert = tileIdx === 0;
+
         targetSet.tiles.push(tile);
-        // Sort the set so it displays correctly
         if (targetSet.type === "run") {
-          // Harika Sıralama Algoritması: Mevcut setteki her taşın temsil ettiği sayıyı indeksinden hesapla.
-          // Yeni eklenen taşın temsil ettiği sayı ise kendi sayısıdır.
-          // Ardından hepsini temsil edilen sayıya göre sırala.
-          
-          // Yeni taşı geçici olarak çıkardık (çünkü targetSet'e çoktan push yapılmıştı)
           const addedTile = targetSet.tiles.pop()!;
           
           const normalIdx = targetSet.tiles.findIndex(t => !isWildcard(t, gameState.okeyTile));
@@ -1059,32 +1056,33 @@ export default function App() {
           if (normalIdx !== -1) {
             const anchorNumber = getEffectiveTile(targetSet.tiles[normalIdx], gameState.okeyTile).number;
             
-            // Mevcut taşlara temsil edilen numaralarını (representedNum) atayalım
             const tilesWithRep = targetSet.tiles.map((t, idx) => ({
               tile: t,
               rep: anchorNumber + (idx - normalIdx)
             }));
             
-            let addedRep = getEffectiveTile(addedTile, gameState.okeyTile).number;
+            let addedRep: number;
             if (isWildcard(addedTile, gameState.okeyTile)) {
               const startNum = anchorNumber - normalIdx;
               const endNum = startNum + targetSet.tiles.length - 1;
-              addedRep = endNum < 13 ? endNum + 1 : startNum - 1;
+              // Sol tıklama → sola okey, sağ tıklama → sağa okey
+              // Sınır kontrolü: geçersiz uca düşmesin
+              if (isLeftInsert && startNum > 1) {
+                addedRep = startNum - 1;
+              } else if (!isLeftInsert && endNum < 13) {
+                addedRep = endNum + 1;
+              } else {
+                // Tek geçerli yön
+                addedRep = endNum < 13 ? endNum + 1 : startNum - 1;
+              }
+            } else {
+              addedRep = getEffectiveTile(addedTile, gameState.okeyTile).number;
             }
 
-            // Yeni taşı ekleyelim
-            tilesWithRep.push({
-              tile: addedTile,
-              rep: addedRep
-            });
-            
-            // Sıralayalım
+            tilesWithRep.push({ tile: addedTile, rep: addedRep });
             tilesWithRep.sort((a, b) => a.rep - b.rep);
-            
-            // Sete geri koyalım
             targetSet.tiles = tilesWithRep.map(item => item.tile);
           } else {
-            // Hiç normal taş yoksa (sadece okeyler), ki bu imkansız ama yine de:
             targetSet.tiles.push(addedTile);
           }
 
