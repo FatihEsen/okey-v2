@@ -431,6 +431,7 @@ export default function App() {
     });
     setSelectedTiles([]);
     setDealingKey(k => k + 1);
+    sounds.deal();
   }, [gameState]);
 
 
@@ -465,6 +466,7 @@ export default function App() {
       setSelectedTiles(prev => 
         prev.includes(tile.id) ? prev.filter(id => id !== tile.id) : [...prev, tile.id]
       );
+      sounds.select();
     }
   };
 
@@ -474,6 +476,7 @@ export default function App() {
     newPlayers[myPlayerIndex].hand = sortBySets(newPlayers[myPlayerIndex].hand, gameState.okeyTile);
     updateGameState({ ...gameState, players: newPlayers });
     setSelectedTiles([]);
+    sounds.sort();
   };
 
   const autoSortPairs = () => {
@@ -482,6 +485,7 @@ export default function App() {
     newPlayers[myPlayerIndex].hand = sortByPairs(newPlayers[myPlayerIndex].hand, gameState.okeyTile);
     updateGameState({ ...gameState, players: newPlayers });
     setSelectedTiles([]);
+    sounds.sort();
   };
 
   const drawFromDeck = () => {
@@ -565,7 +569,7 @@ export default function App() {
     };
     newState.turnSnapshot = JSON.stringify({ ...newState, turnSnapshot: null });
     updateGameState(newState);
-    sounds.draw();
+    sounds.drawDiscard();
   };
 
   const discardTile = (tileToDiscard?: Tile) => {
@@ -1105,6 +1109,7 @@ export default function App() {
         const idx = p.hand.findIndex(ht => ht?.id === tile.id);
         p.hand[idx] = null;
 
+        sounds.process();
         updateGameState({
           ...gameState,
           players: newPlayers,
