@@ -261,10 +261,10 @@ export const findBestSets = (hand: (Tile | null)[], okeyTile: { number: number; 
     return b.score - a.score;                                  // yüksek skor → önce
   });
 
-  // Suffix max skor (budama için üst sınır)
+  // Suffix max skor (budama için üst sınır) — score×10 ile tutarlı olmalı
   const suffixMaxScore = new Array(allCandidates.length + 1).fill(0);
   for (let i = allCandidates.length - 1; i >= 0; i--) {
-    suffixMaxScore[i] = suffixMaxScore[i + 1] + allCandidates[i].score;
+    suffixMaxScore[i] = suffixMaxScore[i + 1] + allCandidates[i].score * 10;
   }
 
   let bestResult: Combination[] = [];
@@ -294,11 +294,15 @@ export const findBestSets = (hand: (Tile | null)[], okeyTile: { number: number; 
     okeysUsed: number,
     runs: number,
   ) {
-    const composite = coveredTiles * 10000 + totalScore - okeysUsed * 300 + runs * RUN_BONUS;
+    // score×10: skor farkı (özellikle okey kullanımında) run bonusunu (150) geçebilmeli.
+    // Örnek: 13-13-okey grubu (skor=39 → 390) ile 1-2-3 serisi (skor=6 → 60+150=210):
+    // grup=30090 > seri=29910 → yüksek sayılı per kazanır.
+    // Eşit skorda (9-9-9 vs 8-9-10, her ikisi=270): run=270+150=420 > grup=270 → seri kazanır.
+    const composite = coveredTiles * 10000 + totalScore * 10 - okeysUsed * 300 + runs * RUN_BONUS;
     if (composite > bestComposite) { bestComposite = composite; bestResult = [...current]; }
     if (idx >= allCandidates.length) return;
 
-    // Üst sınır budaması — RUN_BONUS ile tutarlı olması şart (yoksa geçerli dallar erken kesilir)
+    // Üst sınır budaması — score×10 ve RUN_BONUS ile tutarlı
     const maxAdditionalTiles = totalTilesInHand - coveredTiles;
     const upperBound = maxAdditionalTiles * 10000 + suffixMaxScore[idx] + (allCandidates.length - idx) * RUN_BONUS;
     if (composite + upperBound <= bestComposite) return;
