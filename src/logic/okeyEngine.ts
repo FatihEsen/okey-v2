@@ -275,15 +275,17 @@ export const findBestSets = (hand: (Tile | null)[], okeyTile: { number: number; 
    * Çok boyutlu hedef fonksiyonu (öncelik sırasına göre):
    *   1. Kaç taş set içinde → × 10000 (mümkün olan en fazla taşı set yap)
    *   2. Toplam set skoru    → +score
-   *   3. Kullanılan okey sayısı → -200 × okeyCount (doğal setleri tercih et)
-   *   4. Seri sayısı         → +1 × runs (serileri gruplara tercih et)
+   *   3. Kullanılan okey sayısı → -300 × okeyCount (doğal setleri tercih et; iki okey iki ayrı perde)
+   *   4. Seri (ardışık) sayısı → +150 × runs (serileri gruplara güçlü biçimde tercih et)
    *
-   * Bu sayede:
-   *  - Okey kullanmadan 10-11-12 yapmak, 11-12-okey(=13) yapmaktan daha avantajlı
-   *    (eğer okey başka bir seti kapatabiliyorsa her iki çözüm aynı taşı kapatır
-   *    ama doğal çözüm okeyden ceza almaz → okey ikinci bir set için serbest kalır)
-   *  - İki okey varsa iki ayrı perde kullanmak daha fazla taş kapatır → tercih edilir
+   * Öncelik hiyerarşisi:
+   *  - Daha fazla taşı set içine almak her zaman birinci öncelik (10000 ağırlıklı)
+   *  - Eşit taş kapsamında: seri > grup (+150 per seri güçlü tiebreaker)
+   *  - Okey penaltısı (-300): doğal set, okeyden 300 puan ileride → okey ikinci sete saklanır
+   *  - İki okey: her biri ayrı perde yapar → daha fazla taş kaplar → zaten favori
    */
+  const RUN_BONUS = 150;
+
   function backtrack(
     idx: number,
     current: Combination[],
@@ -292,13 +294,13 @@ export const findBestSets = (hand: (Tile | null)[], okeyTile: { number: number; 
     okeysUsed: number,
     runs: number,
   ) {
-    const composite = coveredTiles * 10000 + totalScore - okeysUsed * 200 + runs;
+    const composite = coveredTiles * 10000 + totalScore - okeysUsed * 300 + runs * RUN_BONUS;
     if (composite > bestComposite) { bestComposite = composite; bestResult = [...current]; }
     if (idx >= allCandidates.length) return;
 
-    // Üst sınır budaması: kalan taşların hepsini set yapabilsek bile geçemeyeceğimiz maksimumu hesapla
+    // Üst sınır budaması — RUN_BONUS ile tutarlı olması şart (yoksa geçerli dallar erken kesilir)
     const maxAdditionalTiles = totalTilesInHand - coveredTiles;
-    const upperBound = maxAdditionalTiles * 10000 + suffixMaxScore[idx] + (allCandidates.length - idx);
+    const upperBound = maxAdditionalTiles * 10000 + suffixMaxScore[idx] + (allCandidates.length - idx) * RUN_BONUS;
     if (composite + upperBound <= bestComposite) return;
 
     for (let i = idx; i < allCandidates.length; i++) {
