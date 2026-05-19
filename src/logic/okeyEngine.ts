@@ -401,20 +401,63 @@ export const calculateHandTotal = (hand: (Tile | null)[], okeyTile: { number: nu
 
 export const sortByPairs = (hand: (Tile | null)[], okeyTile: { number: number; color: Color } | null): (Tile | null)[] => {
   const tiles = hand.filter((t): t is Tile => t !== null);
-  const pairs = findPairs(tiles, okeyTile);
-  const pairedIds = new Set(pairs.flat().map(t => t.id));
+
+  // 1. El düzenlemesinde yan yana konulan taşları algıla ve çift olarak tanı
+  const contiguousPairs: Tile[][] = [];
+  const usedInContiguous = new Set<string>();
+
+  for (let i = 0; i < hand.length - 1; i++) {
+    if (hand[i] && hand[i + 1] && !usedInContiguous.has(hand[i]!.id) && !usedInContiguous.has(hand[i + 1]!.id)) {
+      const t1 = hand[i]!;
+      const t2 = hand[i + 1]!;
+      const eff1 = getEffectiveTile(t1, okeyTile);
+      const eff2 = getEffectiveTile(t2, okeyTile);
+
+      // Yan yana konulan taşlar eşit sayı ve renkteyse çift yap
+      if (eff1.number === eff2.number && eff1.color === eff2.color) {
+        contiguousPairs.push([t1, t2]);
+        usedInContiguous.add(t1.id);
+        usedInContiguous.add(t2.id);
+      }
+    }
+  }
+
+  // 2. Algoritmik çift bulma (contiguous pairs'den kalanlar)
+  const remainingAfterContiguous = tiles.filter(t => !usedInContiguous.has(t.id));
+  const pairs = findPairs(remainingAfterContiguous, okeyTile);
+  const pairedIds = new Set([
+    ...usedInContiguous,
+    ...pairs.flat().map(t => t.id)
+  ]);
+
+  // 3. Eğer okey varsa ve eşi yoksa en büyük taşla eşleştir
+  let adjustedPairs = [...contiguousPairs, ...pairs];
+  const unpaired = tiles.filter(t => !pairedIds.has(t.id));
+  const okey = unpaired.find(t => isWildcard(t, okeyTile));
+
+  if (okey && unpaired.length > 1) {
+    // Okey'yi ve en büyük taşı çift yap
+    const maxTile = unpaired
+      .filter(t => t.id !== okey.id)
+      .reduce((max, t) => t.number > max.number ? t : max);
+    adjustedPairs = adjustedPairs.filter(p => !p.some(t => t.id === okey.id || t.id === maxTile.id));
+    adjustedPairs.push([maxTile, okey]);
+    pairedIds.add(okey.id);
+    pairedIds.add(maxTile.id);
+  }
+
   const remainingTiles = tiles.filter(t => !pairedIds.has(t.id)).sort((a,b) => a.number - b.number);
-  
+
   const result: (Tile | null)[] = new Array(30).fill(null);
   let pos = 0;
-  pairs.forEach(pair => {
+  adjustedPairs.forEach(pair => {
     if (pos + 1 < 30) {
       result[pos++] = pair[0];
       result[pos++] = pair[1];
-      pos++; 
+      pos++;
     }
   });
-  
+
   remainingTiles.forEach(t => {
     if (pos < 30) result[pos++] = t;
   });
@@ -423,13 +466,80 @@ export const sortByPairs = (hand: (Tile | null)[], okeyTile: { number: number; c
 
 export const sortBySets = (hand: (Tile | null)[], okeyTile: { number: number; color: Color } | null): (Tile | null)[] => {
   const tiles = hand.filter((t): t is Tile => t !== null);
-  const sets = findBestSets(tiles, okeyTile);
-  const usedIds = new Set(sets.flatMap(s => s.tiles).map(t => t.id));
-  const remainingTiles = tiles.filter(t => !usedIds.has(t.id));
+
+  // 1. El düzenlemesinde yan yana konulan taşları geçerli set olarak algıla
+  const contiguousSets: Combination[] = [];
+  const usedInContiguous = new Set<string>();
+
+  let i = 0;
+  while (i < hand.length) {
+    if (!hand[i]) {
+      i++;
+      continue;
+    }
+
+    // Başından itibaren yan yana taşları topla
+    const group: Tile[] = [];
+    while (i < hand.length && hand[i] && !usedInContiguous.has(hand[i]!.id)) {
+      group.push(hand[i]!);
+      i++;
+    }
+
+    // Gruplu şekle ayrı mı yoksa aynı sayı/renk mi kontrol et
+    if (group.length >= 3) {
+      if (isValidRun(group, okeyTile)) {
+        const set: Combination = {
+          tiles: group,
+          type: 'run',
+          score: calculateSetScore({ tiles: group, type: 'run', score: 0 }, okeyTile)
+        };
+        contiguousSets.push(set);
+        group.forEach(t => usedInContiguous.add(t.id));
+      } else if (isValidGroup(group, okeyTile)) {
+        const set: Combination = {
+          tiles: group,
+          type: 'group',
+          score: calculateSetScore({ tiles: group, type: 'group', score: 0 }, okeyTile)
+        };
+        contiguousSets.push(set);
+        group.forEach(t => usedInContiguous.add(t.id));
+      }
+    }
+  }
+
+  // 2. Algoritmik set bulma (contiguous sets'den kalanlar)
+  const remainingAfterContiguous = tiles.filter(t => !usedInContiguous.has(t.id));
+  const sets = findBestSets(remainingAfterContiguous, okeyTile);
+  const usedIds = new Set([
+    ...usedInContiguous,
+    ...sets.flatMap(s => s.tiles).map(t => t.id)
+  ]);
+
+  let allSets = [...contiguousSets, ...sets];
+  let remainingTiles = tiles.filter(t => !usedIds.has(t.id));
+
+  // 3. Eğer okey varsa ve set içinde değilse en büyük taşla çift oluştur
+  const okey = remainingTiles.find(t => isWildcard(t, okeyTile));
+  if (okey && remainingTiles.length > 1) {
+    const maxTile = remainingTiles
+      .filter(t => t.id !== okey.id)
+      .reduce((max, t) => t.number > max.number ? t : max);
+
+    // Okey + en büyük taşı çift olarak ekle
+    const pairSet: Combination = {
+      tiles: [maxTile, okey],
+      type: 'group',
+      score: calculateSetScore({ tiles: [maxTile, okey], type: 'group', score: 0 }, okeyTile)
+    };
+    allSets.push(pairSet);
+    usedIds.add(okey.id);
+    usedIds.add(maxTile.id);
+    remainingTiles = remainingTiles.filter(t => !usedIds.has(t.id));
+  }
 
   const result: (Tile | null)[] = new Array(30).fill(null);
 
-  // 1. Irkartaları sırala ve EN SAĞDAN yerleştir — setlerle asla karışmasın
+  // 4. Irkartaları sırala ve EN SAĞDAN yerleştir — setlerle asla karışmasın
   const leftovers = [...remainingTiles].sort((a, b) => {
     const effA = getEffectiveTile(a, okeyTile);
     const effB = getEffectiveTile(b, okeyTile);
@@ -444,9 +554,9 @@ export const sortBySets = (hand: (Tile | null)[], okeyTile: { number: number; co
   // rightPos artık setlerin kullanabileceği son slot (dahil)
   const setsBoundary = rightPos;
 
-  // 2. Setleri soldan yerleştir, 6+ taşlıysa 3'erli parçalara böl
+  // 5. Setleri soldan yerleştir, 6+ taşlıysa 3'erli parçalara böl
   let pos = 0;
-  for (const set of sets) {
+  for (const set of allSets) {
     const chunks: Tile[][] = set.tiles.length >= 6
       ? Array.from({ length: Math.ceil(set.tiles.length / 3) }, (_, i) =>
           set.tiles.slice(i * 3, (i + 1) * 3))
